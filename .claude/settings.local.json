@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze *)",
+      "Bash(powershell -Command \"\\(Get-Content lib\\\\main.dart\\) -replace '\\\\.withOpacity\\\\\\(0\\\\.4\\\\\\)', '.withValues\\(alpha: 0.4\\)' -replace '\\\\.withOpacity\\\\\\(0\\\\.05\\\\\\)', '.withValues\\(alpha: 0.05\\)' -replace '\\\\.withOpacity\\\\\\(0\\\\.08\\\\\\)', '.withValues\\(alpha: 0.08\\)' -replace '\\\\.withOpacity\\\\\\(0\\\\.12\\\\\\)', '.withValues\\(alpha: 0.12\\)' -replace '\\\\.withOpacity\\\\\\(0\\\\.5\\\\\\)', '.withValues\\(alpha: 0.5\\)' | Set-Content lib\\\\main.dart -Encoding utf8\")",
+      "Bash(flutter pub *)",
+      "PowerShell(\\(Get-Content \"C:\\\\healcare\\\\App\\\\flutter_application_1\\\\lib\\\\main.dart\"\\) -replace 'Color\\\\\\(0xff2dc97e\\\\\\)', 'Color\\(0xff52b788\\)' | Set-Content \"C:\\\\healcare\\\\App\\\\flutter_application_1\\\\lib\\\\main.dart\" -Encoding utf8)",
+      "WebFetch(domain:wokwi.com)",
+      "PowerShell(keytool -version 2>&1)",
+      "mcp__visualize__read_me",
+      "mcp__visualize__show_widget"
+    ]
+  }
+}
