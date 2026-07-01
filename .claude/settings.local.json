@@ -8,7 +8,8 @@
       "WebFetch(domain:wokwi.com)",
       "PowerShell(keytool -version 2>&1)",
       "mcp__visualize__read_me",
-      "mcp__visualize__show_widget"
+      "mcp__visualize__show_widget",
+      "Bash(gh auth *)"
     ]
   }
 }

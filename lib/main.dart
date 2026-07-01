@@ -487,70 +487,51 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xffF3FAF6),
-      body: SingleChildScrollView(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          // ── Hero header ──
-          Stack(clipBehavior: Clip.none, children: [
-            Container(
-              height: 250,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xff1b4332), Color(0xff2d6a4f), Color(0xff52b788)]),
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(44)),
-              ),
-              child: Stack(clipBehavior: Clip.none, children: [
-                // decorative blurred circles
-                Positioned(top: -50, right: -40, child: Container(width: 160, height: 160, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.08)))),
-                Positioned(bottom: -60, left: -50, child: Container(width: 180, height: 180, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.06)))),
-                Positioned(top: 60, left: 30, child: Container(width: 14, height: 14, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.25)))),
-                Positioned(top: 100, right: 60, child: Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.3)))),
-                SafeArea(bottom: false, child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        width: 38, height: 38,
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withValues(alpha: 0.25))),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text('เริ่มต้นดูแลสุขภาพ', style: GoogleFonts.notoSansThai(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.8), letterSpacing: 0.5)),
-                    const SizedBox(height: 2),
-                    Text('สมัครสมาชิกผู้ป่วย', style: GoogleFonts.playfairDisplay(fontSize: 30, fontWeight: FontWeight.w700, color: Colors.white, height: 1.15)),
-                  ]),
-                )),
-              ]),
-            ),
-            // floating logo badge overlapping header/card seam
-            Positioned(
-              bottom: -38, left: 0, right: 0,
-              child: Center(child: Container(
-                width: 84, height: 84,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: const Color(0xff1b4332).withValues(alpha: 0.25), blurRadius: 20, offset: const Offset(0, 8))],
-                ),
-                child: Image.asset('assets/hart.png', fit: BoxFit.contain),
-              )),
-            ),
-          ]),
-          const SizedBox(height: 54),
-          // ── Form card ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+      body: Stack(children: [
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xffEEF8F2), Color(0xffFFFFFF)]),
+          ),
+          child: SafeArea(child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Container(width: 26, height: 3, decoration: BoxDecoration(color: const Color(0xff52b788), borderRadius: BorderRadius.circular(4))),
-                const SizedBox(width: 6),
-                Container(width: 26, height: 3, decoration: BoxDecoration(color: const Color(0xffB7E4C7), borderRadius: BorderRadius.circular(4))),
-                const SizedBox(width: 6),
-                Container(width: 26, height: 3, decoration: BoxDecoration(color: const Color(0xffB7E4C7), borderRadius: BorderRadius.circular(4))),
+            // ── Logo with soft glow ──
+            Center(child: SizedBox(
+              width: 130, height: 130,
+              child: Stack(alignment: Alignment.center, children: [
+                Container(width: 130, height: 130, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xff52b788).withValues(alpha: 0.10))),
+                Container(width: 98, height: 98, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xff52b788).withValues(alpha: 0.12))),
+                Container(
+                  width: 78, height: 78,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: const Color(0xff1b4332).withValues(alpha: 0.14), blurRadius: 18, offset: const Offset(0, 6))],
+                  ),
+                  child: Image.asset('assets/hart.png', fit: BoxFit.contain),
+                ),
               ]),
-              const SizedBox(height: 24),
+            )),
+            const SizedBox(height: 18),
+            Center(child: Column(children: [
+              Text('สมัครสมาชิกผู้ป่วย', style: GoogleFonts.playfairDisplay(fontSize: 28, fontWeight: FontWeight.w700, color: const Color(0xff2d6a4f), height: 1.2)),
+              const SizedBox(height: 4),
+              ShaderMask(
+                shaderCallback: (b) => const LinearGradient(colors: [Color(0xff1b4332), Color(0xff40916c)]).createShader(b),
+                child: Text('เริ่มต้นดูแลสุขภาพของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+              ),
+            ])),
+            const SizedBox(height: 28),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Expanded(child: Container(height: 1, color: const Color(0xffCFE9DB))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Text('ข้อมูลบัญชี', style: GoogleFonts.notoSansThai(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xff52b788), letterSpacing: 0.3)),
+                ),
+                Expanded(child: Container(height: 1, color: const Color(0xffCFE9DB))),
+              ]),
+              const SizedBox(height: 22),
               _rLabel('ชื่อ-นามสกุล'),
               const SizedBox(height: 8),
               _rField('กรอกชื่อ-นามสกุล', Icons.person_outline_rounded, fullnameCtrl),
@@ -596,10 +577,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   child: Text('เข้าสู่ระบบ', style: GoogleFonts.notoSansThai(color: const Color(0xff2d6a4f), fontWeight: FontWeight.w700, fontSize: 14)),
                 ),
               ])),
-            ]),
+          ]),
+        )),
+        ),
+        // ── Floating back button (bottom-left) ──
+        Positioned(
+          left: 24, bottom: 6,
+          child: SafeArea(
+            top: false,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: 54, height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xffB7E4C7)),
+                  boxShadow: [BoxShadow(color: const Color(0xff1b4332).withValues(alpha: 0.14), blurRadius: 14, offset: const Offset(0, 5))],
+                ),
+                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xff2d6a4f), size: 20),
+              ),
+            ),
           ),
-        ]),
-      ),
+        ),
+      ]),
     );
   }
 
@@ -724,75 +725,62 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xffF3FAF6),
-      body: SingleChildScrollView(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          // ── Hero header ──
-          Stack(clipBehavior: Clip.none, children: [
-            Container(
-              height: 250,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xff1b4332), Color(0xff2d6a4f), Color(0xff52b788)]),
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(44)),
-              ),
-              child: Stack(clipBehavior: Clip.none, children: [
-                Positioned(top: -50, right: -40, child: Container(width: 160, height: 160, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.08)))),
-                Positioned(bottom: -60, left: -50, child: Container(width: 180, height: 180, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.06)))),
-                Positioned(top: 60, left: 30, child: Container(width: 14, height: 14, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.25)))),
-                Positioned(top: 100, right: 60, child: Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.3)))),
-                SafeArea(bottom: false, child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        width: 38, height: 38,
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withValues(alpha: 0.25))),
-                        child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(children: [
-                      Text('สำหรับนักกายภาพบำบัด', style: GoogleFonts.notoSansThai(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.8), letterSpacing: 0.5)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
-                        child: Text('STAFF', style: GoogleFonts.prompt(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                      ),
-                    ]),
-                    const SizedBox(height: 2),
-                    Text('สมัครบัญชีเจ้าหน้าที่', style: GoogleFonts.playfairDisplay(fontSize: 28, fontWeight: FontWeight.w700, color: Colors.white, height: 1.15)),
-                  ]),
-                )),
-              ]),
-            ),
-            Positioned(
-              bottom: -38, left: 0, right: 0,
-              child: Center(child: Container(
-                width: 84, height: 84,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: const Color(0xff1b4332).withValues(alpha: 0.25), blurRadius: 20, offset: const Offset(0, 8))],
-                ),
-                child: const Icon(Icons.medical_services_rounded, color: Color(0xff2d6a4f), size: 32),
-              )),
-            ),
-          ]),
-          const SizedBox(height: 54),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+      body: Stack(children: [
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0xffEEF8F2), Color(0xffFFFFFF)]),
+          ),
+          child: SafeArea(child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Container(width: 26, height: 3, decoration: BoxDecoration(color: const Color(0xff52b788), borderRadius: BorderRadius.circular(4))),
-                const SizedBox(width: 6),
-                Container(width: 26, height: 3, decoration: BoxDecoration(color: const Color(0xffB7E4C7), borderRadius: BorderRadius.circular(4))),
-                const SizedBox(width: 6),
-                Container(width: 26, height: 3, decoration: BoxDecoration(color: const Color(0xffB7E4C7), borderRadius: BorderRadius.circular(4))),
+            // ── Logo with soft glow + Staff badge ──
+            Center(child: SizedBox(
+              width: 130, height: 130,
+              child: Stack(alignment: Alignment.center, children: [
+                Container(width: 130, height: 130, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xff52b788).withValues(alpha: 0.10))),
+                Container(width: 98, height: 98, decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xff52b788).withValues(alpha: 0.12))),
+                Container(
+                  width: 78, height: 78,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: const Color(0xff1b4332).withValues(alpha: 0.14), blurRadius: 18, offset: const Offset(0, 6))],
+                  ),
+                  child: const Icon(Icons.medical_services_rounded, color: Color(0xff2d6a4f), size: 32),
+                ),
+                Positioned(
+                  bottom: 6, right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xff52b788), Color(0xff1b4332)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [BoxShadow(color: const Color(0xff1b4332).withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))],
+                    ),
+                    child: Text('STAFF', style: GoogleFonts.prompt(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.4)),
+                  ),
+                ),
               ]),
-              const SizedBox(height: 24),
+            )),
+            const SizedBox(height: 18),
+            Center(child: Column(children: [
+              Text('สมัครบัญชีเจ้าหน้าที่', style: GoogleFonts.playfairDisplay(fontSize: 27, fontWeight: FontWeight.w700, color: const Color(0xff2d6a4f), height: 1.2)),
+              const SizedBox(height: 4),
+              ShaderMask(
+                shaderCallback: (b) => const LinearGradient(colors: [Color(0xff1b4332), Color(0xff40916c)]).createShader(b),
+                child: Text('สำหรับนักกายภาพบำบัดเท่านั้น', style: GoogleFonts.notoSansThai(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+              ),
+            ])),
+            const SizedBox(height: 28),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Expanded(child: Container(height: 1, color: const Color(0xffCFE9DB))),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Text('ข้อมูลบัญชี', style: GoogleFonts.notoSansThai(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xff52b788), letterSpacing: 0.3)),
+                ),
+                Expanded(child: Container(height: 1, color: const Color(0xffCFE9DB))),
+              ]),
+              const SizedBox(height: 22),
               _sLabel('ชื่อ-นามสกุล'),
               const SizedBox(height: 8),
               _sField('กรอกชื่อ-นามสกุล', Icons.person_outline_rounded, fullnameCtrl),
@@ -899,10 +887,30 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
                   child: Text('เข้าสู่ระบบ', style: GoogleFonts.notoSansThai(color: const Color(0xff2d6a4f), fontWeight: FontWeight.w700, fontSize: 14)),
                 ),
               ])),
-            ]),
+          ]),
+        )),
+        ),
+        // ── Floating back button (bottom-left) ──
+        Positioned(
+          left: 24, bottom: 6,
+          child: SafeArea(
+            top: false,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: 54, height: 54,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xffB7E4C7)),
+                  boxShadow: [BoxShadow(color: const Color(0xff1b4332).withValues(alpha: 0.14), blurRadius: 14, offset: const Offset(0, 5))],
+                ),
+                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xff2d6a4f), size: 20),
+              ),
+            ),
           ),
-        ]),
-      ),
+        ),
+      ]),
     );
   }
 
