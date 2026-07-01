@@ -711,6 +711,10 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) _snack(e.message ?? 'เกิดข้อผิดพลาด');
+    } on FirebaseException catch (e) {
+      if (mounted) _snack('อ่านข้อมูล Invite Code ไม่สำเร็จ (${e.code}) กรุณาตรวจสอบสิทธิ์การเข้าถึง Firestore');
+    } catch (e) {
+      if (mounted) _snack('เกิดข้อผิดพลาด: $e');
     } finally {
       if (mounted) setState(() => loading = false);
     }
