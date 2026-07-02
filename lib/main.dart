@@ -22,7 +22,70 @@ const Color lightGreen = Color(0xffE6F4EA);
 const Color bgWhite = Color(0xffF7FCF9);
 const Color textDark = Color(0xff2D312F);
 
+// ===== Design tokens =====
+const double kRadius = 16;
+const double kCardPadding = 16;
+const double kGapS = 8;
+const double kGapM = 12;
+const double kGapL = 16;
+const double kGapXL = 24;
+const Color textSecondary = Color(0xa62d312f); // textDark @ 65%
 
+TextStyle tTitle([Color? c]) => GoogleFonts.notoSansThai(fontSize: 18, fontWeight: FontWeight.bold, color: c ?? textDark);
+TextStyle tBody([Color? c]) => GoogleFonts.notoSansThai(fontSize: 15, color: c ?? textDark);
+TextStyle tCaption([Color? c]) => GoogleFonts.notoSansThai(fontSize: 14, color: c ?? textSecondary);
+
+// ===== สถานะคิว: สี/ไอคอน/ป้ายชื่อ ใช้ร่วมกันทุกหน้า =====
+({Color color, IconData icon, String label}) statusInfo(String status) {
+  switch (status) {
+    case 'กำลังรอ':
+      return (color: const Color(0xffB7791F), icon: Icons.hourglass_top_rounded, label: 'กำลังรอ');
+    case 'เรียกคิว':
+      return (color: const Color(0xff1D4ED8), icon: Icons.campaign_rounded, label: 'เรียกคิว');
+    case 'กำลังรักษา':
+      return (color: primaryGreen, icon: Icons.healing_rounded, label: 'กำลังรักษา');
+    case 'เสร็จสิ้น':
+      return (color: const Color(0xff4B6358), icon: Icons.check_circle_rounded, label: 'เสร็จสิ้น');
+    case 'ยกเลิก':
+      return (color: const Color(0xffB91C1C), icon: Icons.cancel_rounded, label: 'ยกเลิก');
+    default:
+      return (color: textSecondary, icon: Icons.help_outline_rounded, label: status);
+  }
+}
+
+// ===== Empty/Error state ที่ใช้ร่วมกัน =====
+class StateMessage extends StatelessWidget {
+  final IconData icon;
+  final String message;
+  final VoidCallback? onRetry;
+  const StateMessage({super.key, required this.icon, required this.message, this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(kGapXL),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 48, color: textSecondary),
+          const SizedBox(height: kGapM),
+          Text(message, style: tBody(textSecondary), textAlign: TextAlign.center),
+          if (onRetry != null) ...[
+            const SizedBox(height: kGapL),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryGreen, foregroundColor: Colors.white,
+                minimumSize: const Size(160, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
+              ),
+              onPressed: onRetry,
+              child: Text('ลองอีกครั้ง', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
 
 class HealthcareStation extends StatelessWidget {
   const HealthcareStation({super.key});
