@@ -2602,8 +2602,12 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
       duration: const Duration(seconds: 5),
       action: undoable
           ? SnackBarAction(label: 'เลิกทำ', textColor: Colors.white, onPressed: () {
+              final revertMap = {'status': fromStatus, 'updatedAt': FieldValue.serverTimestamp()};
+              for (final k in extra.keys) {
+                revertMap[k] = FieldValue.delete();
+              }
               FirebaseFirestore.instance.collection('appointments').doc(docId)
-                  .update({'status': fromStatus, 'updatedAt': FieldValue.serverTimestamp()});
+                  .update(revertMap);
             })
           : null,
     ));
