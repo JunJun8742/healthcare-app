@@ -1615,7 +1615,11 @@ class _BookingScreenState extends State<BookingScreen> {
                   setSheet(() { submitting = true; error = null; });
                   final qNo = await submitBooking();
                   if (!sheetCtx.mounted) return;
-                  if (qNo != null) {
+                  if (qNo == _kActiveQueue) {
+                    // Orange snackbar (shown by submitBooking) already explains
+                    // this outcome — just close the sheet, no in-sheet error.
+                    Navigator.pop(sheetCtx);
+                  } else if (qNo != null) {
                     Navigator.pop(sheetCtx);
                     if (mounted) {
                       Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => BookingSuccessScreen(
@@ -1626,10 +1630,6 @@ class _BookingScreenState extends State<BookingScreen> {
                         machineName: selectedMachineName,
                       )), (r) => false);
                     }
-                  } else if (qNo == _kActiveQueue) {
-                    // Orange snackbar (shown by submitBooking) already explains
-                    // this outcome — just close the sheet, no in-sheet error.
-                    Navigator.pop(sheetCtx);
                   } else {
                     setSheet(() { submitting = false; error = 'จองไม่สำเร็จ ช่วงเวลานี้อาจถูกจองแล้ว กรุณาเลือกเวลาใหม่'; });
                     _loadAvailability();
