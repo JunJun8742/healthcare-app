@@ -1023,14 +1023,21 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
 // 4. Main Navigation (Patient)
 // ==========================================
 class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
+  final int initialIndex;
+  const MainNavigation({super.key, this.initialIndex = 0});
   @override
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
 class _MainNavigationState extends State<MainNavigation> {
-  int index = 0;
+  late int index;
   final pages = [const HomeScreen(), const ActiveQueueScreen(), const HistoryScreen(), const ProfileScreen()];
+
+  @override
+  void initState() {
+    super.initState();
+    index = widget.initialIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1566,8 +1573,13 @@ class _BookingScreenState extends State<BookingScreen> {
                   if (qNo != null) {
                     Navigator.pop(sheetCtx);
                     if (mounted) {
-                      Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainNavigation()), (r) => false);
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('จองคิวสำเร็จ! คิวของคุณคือ $qNo'), backgroundColor: Colors.green));
+                      Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => BookingSuccessScreen(
+                        queueNo: qNo,
+                        doctor: staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ',
+                        date: _fmt(upcomingDays[selectedDateIndex]),
+                        time: availableTimes[selectedTimeIndex],
+                        machineName: selectedMachineName,
+                      )), (r) => false);
                     }
                   } else {
                     setSheet(() { submitting = false; error = 'จองไม่สำเร็จ ช่วงเวลานี้อาจถูกจองแล้ว กรุณาเลือกเวลาใหม่'; });
@@ -1872,6 +1884,75 @@ class _BookingScreenState extends State<BookingScreen> {
     ]),
   );
 
+}
+
+// ==========================================
+// 6.5 Booking Success Screen
+// ==========================================
+class BookingSuccessScreen extends StatelessWidget {
+  final String queueNo, doctor, date, time, machineName;
+  const BookingSuccessScreen({super.key, required this.queueNo, required this.doctor, required this.date, required this.time, required this.machineName});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(IconData ic, String label, String value) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Icon(ic, color: primaryGreen, size: 22),
+        const SizedBox(width: kGapM),
+        Text(label, style: tCaption()),
+        const Spacer(),
+        Flexible(child: Text(value, style: GoogleFonts.notoSansThai(fontSize: 16, fontWeight: FontWeight.w600, color: textDark), textAlign: TextAlign.end)),
+      ]),
+    );
+    return Scaffold(
+      backgroundColor: bgWhite,
+      body: SafeArea(child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(children: [
+          const Spacer(),
+          Container(
+            width: 96, height: 96,
+            decoration: BoxDecoration(color: lightGreen, shape: BoxShape.circle),
+            child: const Icon(Icons.check_rounded, color: primaryGreen, size: 60),
+          ),
+          const SizedBox(height: kGapL),
+          Text('จองคิวสำเร็จ', style: GoogleFonts.notoSansThai(fontSize: 24, fontWeight: FontWeight.bold, color: primaryGreen)),
+          const SizedBox(height: kGapM),
+          Text('หมายเลขคิวของคุณ', style: tCaption()),
+          Text(queueNo, style: GoogleFonts.prompt(fontSize: 72, fontWeight: FontWeight.bold, color: primaryGreen)),
+          const SizedBox(height: kGapL),
+          Container(
+            padding: const EdgeInsets.all(kCardPadding),
+            decoration: BoxDecoration(
+              color: Colors.white, borderRadius: BorderRadius.circular(kRadius),
+              boxShadow: [BoxShadow(color: primaryGreen.withValues(alpha: 0.08), blurRadius: 16, offset: const Offset(0, 6))],
+            ),
+            child: Column(children: [
+              row(Icons.person_rounded, 'เจ้าหน้าที่', doctor),
+              row(Icons.calendar_month_rounded, 'วันที่', date),
+              row(Icons.access_time_rounded, 'เวลา', time),
+              if (machineName.isNotEmpty) row(Icons.precision_manufacturing_rounded, 'เครื่อง', machineName),
+            ]),
+          ),
+          const Spacer(),
+          SizedBox(width: double.infinity, height: 56, child: ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: primaryGreen, foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius))),
+            onPressed: () => Navigator.pushAndRemoveUntil(context,
+              MaterialPageRoute(builder: (_) => const MainNavigation(initialIndex: 1)), (r) => false),
+            child: Text('ดูคิวของฉัน', style: GoogleFonts.notoSansThai(fontSize: 18, fontWeight: FontWeight.bold)),
+          )),
+          const SizedBox(height: kGapM),
+          TextButton(
+            onPressed: () => Navigator.pushAndRemoveUntil(context,
+              MaterialPageRoute(builder: (_) => const MainNavigation()), (r) => false),
+            child: Text('กลับหน้าแรก', style: tBody(textSecondary)),
+          ),
+        ]),
+      )),
+    );
+  }
 }
 
 // ==========================================
