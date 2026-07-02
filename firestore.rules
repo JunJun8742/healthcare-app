@@ -42,8 +42,13 @@ service cloud.firestore {
     match /appointments/{id} {
       allow read: if isSignedIn() && (resource.data.patientUid == request.auth.uid || isStaffOrAdmin());
       allow create: if isSignedIn() && request.resource.data.patientUid == request.auth.uid;
+      // Patients may only cancel their own waiting appointment, touching only
+      // the cancel fields. cancelledBy is optional (older APKs don't send it —
+      // hasOnly permits a subset), so legacy clients keep working.
       allow update: if isSignedIn() && resource.data.patientUid == request.auth.uid &&
-        request.resource.data.status == 'ยกเลิก';
+        resource.data.status == 'กำลังรอ' &&
+        request.resource.data.status == 'ยกเลิก' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt', 'cancelledBy']);
       allow update: if isStaffOrAdmin();
       allow delete: if isAdmin();
     }
@@ -124,6 +129,18 @@ service cloud.firestore {
     match /settings/staff_invite {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // notifications/{id} — push-notification history, written ONLY by Cloud
+    // Functions via the Admin SDK (which bypasses these rules). Clients may
+    // read their own docs and flip read false -> true; nothing else.
+    match /notifications/{id} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.uid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) &&
+        resource.data.read == false &&
+        request.resource.data.read == true;
+      allow create, delete: if false;
     }
 
     // Deny everything else by default.
