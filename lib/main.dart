@@ -702,6 +702,7 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
         'email': emailCtrl.text.trim(),
         'role': 'staff',
         'specialization': specCtrl.text.trim(),
+        'inviteCode': inviteCtrl.text.trim(),
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -1382,29 +1383,44 @@ class _BookingScreenState extends State<BookingScreen> {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
       String dateStr = _fmt(upcomingDays[selectedDateIndex]);
+      // '/' is illegal in a Firestore document-ID path segment (dateStr is
+      // Thai Buddhist dd/MM/yyyy); sanitize consistently for both doc IDs.
+      String dateKey = dateStr.replaceAll('/', '-');
       String staffUid = staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '';
       String time = availableTimes[selectedTimeIndex];
-      DocumentReference<Map<String, dynamic>> counterRef =
-          FirebaseFirestore.instance.collection('queue_days').doc('${staffUid}_$dateStr');
+      // queueNo is a single shared queue board across all staff (StaffQueueScreen),
+      // so the counter must be keyed per-day only, not per-staff.
+      DocumentReference<Map<String, dynamic>> dayCounterRef =
+          FirebaseFirestore.instance.collection('queue_days').doc(dateKey);
+      // Slot lock stays per-staff so two different staff can share a time slot.
+      DocumentReference<Map<String, dynamic>> slotRef =
+          FirebaseFirestore.instance.collection('queue_slots').doc('${staffUid}_$dateKey');
       DocumentReference<Map<String, dynamic>> apptRef =
           FirebaseFirestore.instance.collection('appointments').doc();
 
       await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot<Map<String, dynamic>> counterSnap = await transaction.get(counterRef);
-        Map<String, dynamic>? counterData = counterSnap.data();
-        Map<String, dynamic> bookedTimes = Map<String, dynamic>.from(counterData?['bookedTimes'] ?? {});
+        DocumentSnapshot<Map<String, dynamic>> daySnap = await transaction.get(dayCounterRef);
+        DocumentSnapshot<Map<String, dynamic>> slotSnap = await transaction.get(slotRef);
+        Map<String, dynamic>? dayData = daySnap.data();
+        Map<String, dynamic>? slotData = slotSnap.data();
+        Map<String, dynamic> bookedTimes = Map<String, dynamic>.from(slotData?['bookedTimes'] ?? {});
         if (bookedTimes[time] == true) {
           throw Exception('ช่วงเวลานี้เพิ่งถูกจองไปแล้ว กรุณาเลือกเวลาอื่น');
         }
-        int nextNum = (counterData?['count'] ?? 0) + 1;
+        int nextNum = (dayData?['count'] ?? 0) + 1;
         String qNo = nextNum.toString().padLeft(3, '0');
 
-        transaction.set(counterRef, {
-          'staffUid': staffUid,
+        transaction.set(dayCounterRef, {
           'date': dateStr,
           'count': nextNum,
-          'bookedTimes.$time': true,
-        }, SetOptions(merge: true));
+        });
+
+        bookedTimes[time] = true;
+        transaction.set(slotRef, {
+          'staffUid': staffUid,
+          'date': dateStr,
+          'bookedTimes': bookedTimes,
+        });
 
         transaction.set(apptRef, {
           'patientUid': user.uid, 'patientName': patientName, 'queueNo': qNo,

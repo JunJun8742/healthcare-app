@@ -20,9 +20,16 @@ service cloud.firestore {
     }
 
     // users/{uid}
+    // NOTE: admin accounts cannot be self-created under this rule by design —
+    // admins are provisioned manually via the Firebase console.
     match /users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isStaffOrAdmin());
-      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid && (
+        request.resource.data.role == 'patient' ||
+        (request.resource.data.role == 'staff' &&
+          request.resource.data.inviteCode ==
+            get(/databases/$(database)/documents/settings/staff_invite).data.invite_code)
+      );
       allow update: if isSignedIn() && request.auth.uid == uid &&
         request.resource.data.role == resource.data.role;
       allow update: if isAdmin();
@@ -39,10 +46,30 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // queue_days/{id} — internal counter/slot-lock docs used by the booking transaction
+    // queue_days/{dateStr} — global per-day queue-number counter used by the booking
+    // transaction. `count` may only ever go up by exactly 1 per write.
     match /queue_days/{id} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.diff({}).affectedKeys().hasOnly(['date', 'count']) &&
+        request.resource.data.count == 1;
+      allow update: if isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date', 'count']) &&
+        request.resource.data.count == resource.data.count + 1;
+    }
+
+    // queue_slots/{staffUid}_{dateStr} — per-staff slot lock used by the booking
+    // transaction. `bookedTimes` keys may only ever be added (true), never removed
+    // or flipped back to false, preventing a signed-in user from clearing a lock.
+    match /queue_slots/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.resource.data.diff({}).affectedKeys().hasOnly(['staffUid', 'date', 'bookedTimes']) &&
+        request.resource.data.bookedTimes.values().hasOnly([true]);
+      allow update: if isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bookedTimes']) &&
+        request.resource.data.bookedTimes.keys().hasAll(resource.data.bookedTimes.keys()) &&
+        request.resource.data.bookedTimes.values().hasOnly([true]);
     }
 
     // sos_alerts/{id}
@@ -68,9 +95,10 @@ service cloud.firestore {
     }
 
     // settings/staff_invite — read during staff signup, before the user is
-    // authenticated. Client-side invite-code check only (known limitation;
-    // server-side validation via Cloud Functions is deferred, see Phase 1 plan).
-    match /settings/{id} {
+    // authenticated, and also validated server-side by the users/{uid} create
+    // rule above. Narrowed to this exact doc (was a wildcard over all of
+    // settings/{id}).
+    match /settings/staff_invite {
       allow read: if true;
       allow write: if isAdmin();
     }
