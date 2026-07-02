@@ -53,6 +53,30 @@ TextStyle tCaption([Color? c]) => GoogleFonts.notoSansThai(fontSize: 14, color: 
   }
 }
 
+// ===== queue_slots release/re-lock helpers (shared by patient cancel & staff
+// status changes) — see firestore.rules queue_slots for the write invariants.
+// Failure here must never break the caller's cancel/undo UX, so both are
+// fire-and-forget with a debugPrint on error.
+Future<void> releaseQueueSlot({required String staffUid, required String date, required String time}) async {
+  try {
+    String dateKey = date.replaceAll('/', '-');
+    await FirebaseFirestore.instance.collection('queue_slots').doc('${staffUid}_$dateKey')
+        .update({'bookedTimes.$time': false});
+  } catch (e) {
+    debugPrint('releaseQueueSlot failed: $e');
+  }
+}
+
+Future<void> relockQueueSlot({required String staffUid, required String date, required String time, required String apptId}) async {
+  try {
+    String dateKey = date.replaceAll('/', '-');
+    await FirebaseFirestore.instance.collection('queue_slots').doc('${staffUid}_$dateKey')
+        .update({'bookedTimes.$time': apptId});
+  } catch (e) {
+    debugPrint('relockQueueSlot failed: $e');
+  }
+}
+
 // ===== Empty/Error state ที่ใช้ร่วมกัน =====
 class StateMessage extends StatelessWidget {
   final IconData icon;
@@ -1140,7 +1164,7 @@ class HomeScreen extends StatelessWidget {
                           return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
                         }
                         String qNo = ''; String status = ''; String? activeDocId;
-                        String time = '';
+                        String time = ''; String activeStaffUid = ''; String activeDate = '';
                         if (snap.hasData && snap.data!.docs.isNotEmpty) {
                           var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
                           var latest = docs.first;
@@ -1149,6 +1173,8 @@ class HomeScreen extends StatelessWidget {
                             status = latest['status'] ?? '';
                             activeDocId = latest.id;
                             time = latest['time'] ?? '';
+                            activeStaffUid = latest['staffUid'] ?? '';
+                            activeDate = latest['date'] ?? '';
                           }
                         }
                         final bool hasQueue = qNo.isNotEmpty;
@@ -1210,7 +1236,7 @@ class HomeScreen extends StatelessWidget {
                                     if (activeDocId != null && status == 'กำลังรอ') ...[
                                       const SizedBox(height: 12),
                                       GestureDetector(
-                                        onTap: () => _confirmCancel(context, activeDocId!),
+                                        onTap: () => _confirmCancel(context, activeDocId!, staffUid: activeStaffUid, date: activeDate, time: time),
                                         child: Text('ยกเลิกคิว', style: GoogleFonts.notoSansThai(color: Colors.red.shade400, fontSize: 14, decoration: TextDecoration.underline)),
                                       ),
                                     ],
@@ -1262,7 +1288,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _confirmCancel(BuildContext context, String docId) {
+  void _confirmCancel(BuildContext context, String docId, {String staffUid = '', String date = '', String time = ''}) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -1276,6 +1302,9 @@ class HomeScreen extends StatelessWidget {
             onPressed: () async {
               Navigator.pop(context);
               await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp()});
+              if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+                releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+              }
               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
             },
             child: const Text('ยืนยันยกเลิก'),
@@ -1389,6 +1418,12 @@ class BookingScreen extends StatefulWidget {
 }
 
 class _BookingScreenState extends State<BookingScreen> {
+  // Sentinel returned by submitBooking's pre-check when the patient already
+  // has an active queue: the orange snackbar already explains the failure,
+  // so the confirm sheet must not also show its own in-sheet error on top
+  // of it. `null` still means a real failure (show the in-sheet error).
+  static const String _kActiveQueue = '__ACTIVE_QUEUE__';
+
   int selectedDateIndex = 0;
   int selectedStaffIndex = 0;
   int selectedTimeIndex = 0;
@@ -1452,13 +1487,15 @@ class _BookingScreenState extends State<BookingScreen> {
         final raw = docSnap.data()?['times'];
         if (raw is List && raw.isNotEmpty) times = List<String>.from(raw);
       }
-      var apptSnap = await FirebaseFirestore.instance.collection('appointments').where('date', isEqualTo: dateStr).where('staffUid', isEqualTo: staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '').where('status', whereIn: ['กำลังรอ', 'เรียกคิว', 'กำลังรักษา']).get();
-      Set<String> bookedTimes = {};
-      for (var doc in apptSnap.docs) {
-        String t = (doc.data())['time'] ?? '';
-        if (t.isNotEmpty) bookedTimes.add(t);
-      }
-      List<String> freeTimes = times.where((t) => !bookedTimes.contains(t)).toList();
+      // Patients cannot read other patients' appointments (see firestore.rules),
+      // so booked/free status is derived from the queue_slots lock doc instead
+      // of scanning appointments. A time is booked iff its value exists and is
+      // not `false` (values are appointment-doc-id strings while booked).
+      String dateKey = dateStr.replaceAll('/', '-');
+      String slotDocId = '${staffUid}_$dateKey';
+      var slotSnap = await FirebaseFirestore.instance.collection('queue_slots').doc(slotDocId).get();
+      Map<String, dynamic> bookedTimesMap = slotSnap.data()?['bookedTimes'] ?? {};
+      List<String> freeTimes = times.where((t) => bookedTimesMap[t] == null || bookedTimesMap[t] == false).toList();
       if (mounted) setState(() { availableTimes = freeTimes; selectedTimeIndex = 0; loadingTimes = false; });
     } catch (_) {
       if (mounted) setState(() { availableTimes = []; loadingTimes = false; });
@@ -1472,7 +1509,7 @@ class _BookingScreenState extends State<BookingScreen> {
       var existing = await FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user!.uid).where('status', whereIn: ['กำลังรอ', 'เรียกคิว', 'กำลังรักษา']).get();
       if (existing.docs.isNotEmpty) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คุณมีคิวที่ยังไม่เสร็จสิ้นอยู่แล้ว'), backgroundColor: Colors.orange));
-        return null;
+        return _kActiveQueue;
       }
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
@@ -1499,7 +1536,7 @@ class _BookingScreenState extends State<BookingScreen> {
         Map<String, dynamic>? dayData = daySnap.data();
         Map<String, dynamic>? slotData = slotSnap.data();
         Map<String, dynamic> bookedTimes = Map<String, dynamic>.from(slotData?['bookedTimes'] ?? {});
-        if (bookedTimes[time] == true) {
+        if (bookedTimes[time] != null && bookedTimes[time] != false) {
           throw Exception('ช่วงเวลานี้เพิ่งถูกจองไปแล้ว กรุณาเลือกเวลาอื่น');
         }
         int nextNum = (dayData?['count'] ?? 0) + 1;
@@ -1511,7 +1548,7 @@ class _BookingScreenState extends State<BookingScreen> {
           'count': nextNum,
         });
 
-        bookedTimes[time] = true;
+        bookedTimes[time] = apptRef.id;
         transaction.set(slotRef, {
           'staffUid': staffUid,
           'date': dateStr,
@@ -1589,6 +1626,10 @@ class _BookingScreenState extends State<BookingScreen> {
                         machineName: selectedMachineName,
                       )), (r) => false);
                     }
+                  } else if (qNo == _kActiveQueue) {
+                    // Orange snackbar (shown by submitBooking) already explains
+                    // this outcome — just close the sheet, no in-sheet error.
+                    Navigator.pop(sheetCtx);
                   } else {
                     setSheet(() { submitting = false; error = 'จองไม่สำเร็จ ช่วงเวลานี้อาจถูกจองแล้ว กรุณาเลือกเวลาใหม่'; });
                     _loadAvailability();
@@ -2069,7 +2110,7 @@ class ActiveQueueScreen extends StatelessWidget {
                         style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.red.shade300), foregroundColor: Colors.red, padding: const EdgeInsets.symmetric(vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                         icon: const Icon(Icons.cancel_outlined, size: 18),
                         label: Text('ยกเลิกคิว', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15)),
-                        onPressed: () => _confirmCancel(context, latest.id),
+                        onPressed: () => _confirmCancel(context, latest.id, staffUid: data['staffUid'] ?? '', date: data['date'] ?? '', time: data['time'] ?? ''),
                       ),
                     ),
                   if (isWait) const SizedBox(height: 16),
@@ -2100,7 +2141,7 @@ class ActiveQueueScreen extends StatelessWidget {
     );
   }
 
-  void _confirmCancel(BuildContext context, String docId) {
+  void _confirmCancel(BuildContext context, String docId, {String staffUid = '', String date = '', String time = ''}) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -2114,6 +2155,9 @@ class ActiveQueueScreen extends StatelessWidget {
             onPressed: () async {
               Navigator.pop(context);
               await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp()});
+              if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+                releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+              }
               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
             },
             child: const Text('ยืนยันยกเลิก'),
@@ -2577,7 +2621,12 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     );
   }
 
-  Future<void> _changeStatus(BuildContext context, String docId, String queueNo, String patientName, String fromStatus, String toStatus, {Map<String, dynamic> extra = const {}}) async {
+  // [staffUid]/[date]/[time] identify the appointment's queue_slots lock so a
+  // cancel can release it (and an undo can re-lock it). [prevValues] carries
+  // the PRIOR value of any key in [extra] (e.g. an existing 'notes') so undo
+  // restores it instead of wiping it with FieldValue.delete().
+  Future<void> _changeStatus(BuildContext context, String docId, String queueNo, String patientName, String fromStatus, String toStatus,
+      {Map<String, dynamic> extra = const {}, Map<String, dynamic> prevValues = const {}, String staffUid = '', String date = '', String time = ''}) async {
     final s = statusInfo(toStatus);
     final ok = await showDialog<bool>(
       context: context,
@@ -2597,6 +2646,9 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     );
     if (ok != true) return;
     await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': toStatus, 'updatedAt': FieldValue.serverTimestamp(), ...extra});
+    if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+      releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+    }
     if (!context.mounted) return;
     final undoable = toStatus == 'ยกเลิก' || toStatus == 'เสร็จสิ้น';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2604,13 +2656,29 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
       backgroundColor: s.color,
       duration: const Duration(seconds: 5),
       action: undoable
-          ? SnackBarAction(label: 'เลิกทำ', textColor: Colors.white, onPressed: () {
+          ? SnackBarAction(label: 'เลิกทำ', textColor: Colors.white, onPressed: () async {
+              // Guard: only revert if the doc's status is still what we just
+              // set it to — otherwise a concurrent status change happened and
+              // undo must not clobber it.
+              final apptRef = FirebaseFirestore.instance.collection('appointments').doc(docId);
+              final cur = await apptRef.get();
+              if (!cur.exists || cur.data()?['status'] != toStatus) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('ไม่สามารถเลิกทำได้ สถานะถูกเปลี่ยนไปแล้ว', style: GoogleFonts.notoSansThai()),
+                    backgroundColor: Colors.orange,
+                  ));
+                }
+                return;
+              }
               final revertMap = {'status': fromStatus, 'updatedAt': FieldValue.serverTimestamp()};
               for (final k in extra.keys) {
-                revertMap[k] = FieldValue.delete();
+                revertMap[k] = prevValues.containsKey(k) ? prevValues[k] : FieldValue.delete();
               }
-              FirebaseFirestore.instance.collection('appointments').doc(docId)
-                  .update(revertMap);
+              await apptRef.update(revertMap);
+              if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+                relockQueueSlot(staffUid: staffUid, date: date, time: time, apptId: docId);
+              }
             })
           : null,
     ));
@@ -2629,7 +2697,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     await _changeStatus(context, waiting.first.id, m['queueNo'] ?? '', m['patientName'] ?? '', 'กำลังรอ', 'เรียกคิว');
   }
 
-  void _completeDialog(BuildContext ctx, String docId, String queueNo, String patientName) {
+  void _completeDialog(BuildContext ctx, String docId, String queueNo, String patientName, {String prevNotes = '', String staffUid = '', String date = '', String time = ''}) {
     final notesCtrl = TextEditingController();
     showDialog(
       context: ctx,
@@ -2649,7 +2717,9 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
               Navigator.pop(ctx);
               final notes = notesCtrl.text.trim();
               _changeStatus(ctx, docId, queueNo, patientName, 'กำลังรักษา', 'เสร็จสิ้น',
-                  extra: {'completedAt': FieldValue.serverTimestamp(), if (notes.isNotEmpty) 'notes': notes});
+                  extra: {'completedAt': FieldValue.serverTimestamp(), if (notes.isNotEmpty) 'notes': notes},
+                  prevValues: {if (notes.isNotEmpty && prevNotes.isNotEmpty) 'notes': prevNotes},
+                  staffUid: staffUid, date: date, time: time);
             },
             child: const Text('ยืนยันเสร็จสิ้น'),
           ),
@@ -2668,9 +2738,16 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
         stream: FirebaseFirestore.instance.collection('appointments').where('date', isEqualTo: _fmtDate(selectedDay)).snapshots(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
+          // allDocs: non-terminal (excludes เสร็จสิ้น/ยกเลิก) — drives header stats
+          // and _callNext, which must never consider completed/cancelled queues.
           var allDocs = (snap.data?.docs ?? []).where((d) => !['เสร็จสิ้น', 'ยกเลิก'].contains(d['status'])).toList()
             ..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return ta.compareTo(tb); });
-          var docs = allDocs.where((d) {
+          // fullDayDocs: every appointment for the day, terminal states included —
+          // needed so the 'เสร็จสิ้น' chip has something to show.
+          var fullDayDocs = (snap.data?.docs ?? []).toList()
+            ..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return ta.compareTo(tb); });
+          var listSource = statusFilter == 'เสร็จสิ้น' ? fullDayDocs : allDocs;
+          var docs = listSource.where((d) {
             final m = d.data() as Map<String, dynamic>;
             final okStatus = statusFilter.isEmpty || m['status'] == statusFilter;
             final q = searchQuery.toLowerCase();
@@ -2813,7 +2890,12 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                         case 'กำลังรักษา':
                           statusColor = Colors.orange.shade700; sIcon = Icons.medical_services_rounded;
                           btnGrad = [Colors.green.shade400, const Color(0xff186B44)]; btnLabel = 'เสร็จสิ้น';
-                          btnAction = () => _completeDialog(context, doc.id, queueNo, patientName);
+                          btnAction = () => _completeDialog(context, doc.id, queueNo, patientName, prevNotes: data['notes'] ?? '');
+                          break;
+                        case 'เสร็จสิ้น':
+                          statusColor = const Color(0xff4B6358); sIcon = Icons.check_circle_rounded;
+                          btnGrad = [Colors.grey.shade400, Colors.grey.shade600]; btnLabel = 'เสร็จสิ้นแล้ว';
+                          btnAction = null;
                           break;
                         default:
                           statusColor = primaryGreen; sIcon = Icons.access_time_rounded;
