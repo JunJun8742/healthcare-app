@@ -109,11 +109,12 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (resource.data.staffUid == request.auth.uid || isAdmin());
     }
 
-    // machine_status/{id} — ESP32 devices write without Firebase Auth today;
-    // this is a known limitation (device auth is out of scope for Phase 1).
+    // machine_status/{id} — ESP32 devices write without Firebase Auth today,
+    // so writes are open but restricted to the heartbeat fields only.
+    // Known limitation accepted for Phase 1; replace with device auth later.
     match /machine_status/{id} {
       allow read: if isSignedIn();
-      allow write: if isStaffOrAdmin();
+      allow write: if request.resource.data.keys().hasOnly(['is_active', 'last_updated']);
     }
 
     // settings/staff_invite — read during staff signup, before the user is
