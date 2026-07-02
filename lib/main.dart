@@ -2621,9 +2621,9 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                 (m['queueNo'] ?? '').toString().contains(q);
             return okStatus && okSearch;
           }).toList();
-          int waiting = docs.where((d) => d['status'] == 'กำลังรอ').length;
-          int calling = docs.where((d) => d['status'] == 'เรียกคิว').length;
-          int treating = docs.where((d) => d['status'] == 'กำลังรักษา').length;
+          int waiting = allDocs.where((d) => d['status'] == 'กำลังรอ').length;
+          int calling = allDocs.where((d) => d['status'] == 'เรียกคิว').length;
+          int treating = allDocs.where((d) => d['status'] == 'กำลังรักษา').length;
 
           return Column(children: [
             // ── Header ──
@@ -2646,7 +2646,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [BoxShadow(color: primaryGreen.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 3))],
                     ),
-                    child: Text('${docs.length} คิว', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                    child: Text('${allDocs.length} คิว', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
                   ),
                 ]),
                 const SizedBox(height: 16),
