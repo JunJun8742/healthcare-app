@@ -410,10 +410,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 22),
 
-                // ชื่อผู้ใช้
-                _label('ชื่อผู้ใช้'),
+                // อีเมล
+                _label('อีเมล'),
                 const SizedBox(height: 8),
-                _field('กรอกชื่อผู้ใช้', Icons.person_outline_rounded, emailCtrl, false),
+                _field('กรอกอีเมล', Icons.email_outlined, emailCtrl, false, keyboardType: TextInputType.emailAddress),
                 const SizedBox(height: 16),
 
                 // รหัสผ่าน
@@ -505,7 +505,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _label(String text) => Text(text,
     style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w700, fontSize: 14, color: const Color(0xff1b4332)));
 
-  Widget _field(String hint, IconData icon, TextEditingController ctrl, bool isPass) {
+  Widget _field(String hint, IconData icon, TextEditingController ctrl, bool isPass, {TextInputType? keyboardType}) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xffF8FEFA),
@@ -514,7 +514,7 @@ class _LoginScreenState extends State<LoginScreen> {
         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: TextField(
-        controller: ctrl,
+        controller: ctrl, keyboardType: keyboardType,
         obscureText: isPass && obscure,
         style: GoogleFonts.notoSansThai(fontSize: 15, color: textDark),
         decoration: InputDecoration(
