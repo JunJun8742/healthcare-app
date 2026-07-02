@@ -469,7 +469,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         'fullname': fullnameCtrl.text.trim(),
         'email': emailCtrl.text.trim(),
         'role': 'patient',
-        'createdAt': Timestamp.now(),
+        'createdAt': FieldValue.serverTimestamp(),
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('สมัครสมาชิกสำเร็จ!'), backgroundColor: Colors.green));
@@ -702,7 +702,7 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
         'email': emailCtrl.text.trim(),
         'role': 'staff',
         'specialization': specCtrl.text.trim(),
-        'createdAt': Timestamp.now(),
+        'createdAt': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
@@ -1191,7 +1191,7 @@ class HomeScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': Timestamp.now()});
+              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp()});
               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
             },
             child: const Text('ยืนยันยกเลิก'),
@@ -1382,17 +1382,39 @@ class _BookingScreenState extends State<BookingScreen> {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
       String dateStr = _fmt(upcomingDays[selectedDateIndex]);
-      // นับคิวในวันนั้นเพื่อให้เป็นลำดับ
-      var todayAppts = await FirebaseFirestore.instance.collection('appointments').where('date', isEqualTo: dateStr).get();
-      int nextNum = todayAppts.docs.length + 1;
-      String qNo = nextNum.toString().padLeft(3, '0');
-      await FirebaseFirestore.instance.collection('appointments').add({
-        'patientUid': user.uid, 'patientName': patientName, 'queueNo': qNo,
-        'doctor': staffList.isNotEmpty ? (staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ') : 'นักกายภาพ',
-        'staffUid': staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '',
-        'date': _fmt(upcomingDays[selectedDateIndex]), 'time': availableTimes[selectedTimeIndex],
-        'status': 'กำลังรอ', 'notes': '', 'machineId': selectedMachineId ?? '', 'machineName': selectedMachineName, 'createdAt': Timestamp.now(),
+      String staffUid = staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '';
+      String time = availableTimes[selectedTimeIndex];
+      DocumentReference<Map<String, dynamic>> counterRef =
+          FirebaseFirestore.instance.collection('queue_days').doc('${staffUid}_$dateStr');
+      DocumentReference<Map<String, dynamic>> apptRef =
+          FirebaseFirestore.instance.collection('appointments').doc();
+
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        DocumentSnapshot<Map<String, dynamic>> counterSnap = await transaction.get(counterRef);
+        Map<String, dynamic>? counterData = counterSnap.data();
+        Map<String, dynamic> bookedTimes = Map<String, dynamic>.from(counterData?['bookedTimes'] ?? {});
+        if (bookedTimes[time] == true) {
+          throw Exception('ช่วงเวลานี้เพิ่งถูกจองไปแล้ว กรุณาเลือกเวลาอื่น');
+        }
+        int nextNum = (counterData?['count'] ?? 0) + 1;
+        String qNo = nextNum.toString().padLeft(3, '0');
+
+        transaction.set(counterRef, {
+          'staffUid': staffUid,
+          'date': dateStr,
+          'count': nextNum,
+          'bookedTimes.$time': true,
+        }, SetOptions(merge: true));
+
+        transaction.set(apptRef, {
+          'patientUid': user.uid, 'patientName': patientName, 'queueNo': qNo,
+          'doctor': staffList.isNotEmpty ? (staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ') : 'นักกายภาพ',
+          'staffUid': staffUid,
+          'date': dateStr, 'time': time,
+          'status': 'กำลังรอ', 'notes': '', 'machineId': selectedMachineId ?? '', 'machineName': selectedMachineName, 'createdAt': FieldValue.serverTimestamp(),
+        });
       });
+
       if (mounted) {
         Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainNavigation()), (r) => false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('จองคิวสำเร็จ!'), backgroundColor: Colors.green));
@@ -1829,7 +1851,7 @@ class ActiveQueueScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': Timestamp.now()});
+              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp()});
               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
             },
             child: const Text('ยืนยันยกเลิก'),
@@ -2164,7 +2186,7 @@ class _SOSScreenState extends State<SOSScreen> {
     try {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
       String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
-      await FirebaseFirestore.instance.collection('sos_alerts').add({'patientUid': user.uid, 'patientName': patientName, 'issue': message, 'status': 'รอรับเรื่อง', 'createdAt': Timestamp.now()});
+      await FirebaseFirestore.instance.collection('sos_alerts').add({'patientUid': user.uid, 'patientName': patientName, 'issue': message, 'status': 'รอรับเรื่อง', 'createdAt': FieldValue.serverTimestamp()});
       if (mounted) {
         showDialog(
           context: context, barrierDismissible: false,
@@ -2261,7 +2283,7 @@ class StaffQueueScreen extends StatelessWidget {
 
   Future<void> _update(String docId, String status, {String notes = ''}) async {
     Map<String, dynamic> data = {'status': status};
-    if (status == 'เสร็จสิ้น') { data['completedAt'] = Timestamp.now(); if (notes.isNotEmpty) data['notes'] = notes; }
+    if (status == 'เสร็จสิ้น') { data['completedAt'] = FieldValue.serverTimestamp(); if (notes.isNotEmpty) data['notes'] = notes; }
     await FirebaseFirestore.instance.collection('appointments').doc(docId).update(data);
   }
 
@@ -2508,7 +2530,7 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
-  Future<void> resolve(String docId) async => FirebaseFirestore.instance.collection('sos_alerts').doc(docId).update({'status': 'รับเรื่องแล้ว', 'resolvedAt': Timestamp.now()});
+  Future<void> resolve(String docId) async => FirebaseFirestore.instance.collection('sos_alerts').doc(docId).update({'status': 'รับเรื่องแล้ว', 'resolvedAt': FieldValue.serverTimestamp()});
 
   @override
   Widget build(BuildContext context) {
@@ -2866,7 +2888,7 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
         int bMin = int.parse(bP[0]) * 60 + int.parse(bP[1]);
         return aMin.compareTo(bMin);
       });
-      await FirebaseFirestore.instance.collection('staff_availability').doc(_docId()).set({'staffUid': FirebaseAuth.instance.currentUser?.uid ?? '', 'date': dateStr, 'times': sorted, 'updatedAt': Timestamp.now()});
+      await FirebaseFirestore.instance.collection('staff_availability').doc(_docId()).set({'staffUid': FirebaseAuth.instance.currentUser?.uid ?? '', 'date': dateStr, 'times': sorted, 'updatedAt': FieldValue.serverTimestamp()});
       if (mounted) { setState(() => isLocked = true); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกเวลาว่างสำหรับ $dateStr แล้ว'), backgroundColor: Colors.green)); }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
