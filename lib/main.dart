@@ -102,10 +102,16 @@ class HealthcareStation extends StatelessWidget {
       ],
       supportedLocales: const [Locale('th'), Locale('en')],
       locale: const Locale('th'),
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        final clamped = mq.textScaler.clamp(minScaleFactor: 1.0, maxScaleFactor: 1.4);
+        return MediaQuery(data: mq.copyWith(textScaler: clamped), child: child!);
+      },
       theme: ThemeData(
         useMaterial3: true,
         scaffoldBackgroundColor: bgWhite,
         colorSchemeSeed: primaryGreen,
+        materialTapTargetSize: MaterialTapTargetSize.padded,
         textTheme: GoogleFonts.promptTextTheme(Theme.of(context).textTheme).apply(
           bodyColor: textDark, displayColor: textDark,
         ),
