@@ -1385,6 +1385,15 @@ class _BookingScreenState extends State<BookingScreen> {
   String? selectedMachineId;
   String selectedMachineName = '';
 
+  bool get _canSubmit => staffList.isNotEmpty && availableTimes.isNotEmpty && !loadingTimes && !loadingStaff;
+
+  String get _missingHint {
+    if (loadingStaff || loadingTimes) return 'กำลังโหลดข้อมูล...';
+    if (staffList.isEmpty) return 'ยังไม่มีเจ้าหน้าที่ให้เลือก';
+    if (availableTimes.isEmpty) return 'ไม่มีเวลาว่างในวันนี้ กรุณาเลือกวันอื่น';
+    return '';
+  }
+
   late List<DateTime> upcomingDays;
   final List<String> thaiDayNames = ['', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'];
 
@@ -1543,7 +1552,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
             // ── Step 1: วันที่ ──
             _bookingCard(
-              step: 1, icon: Icons.calendar_month_rounded, title: 'เลือกวันที่นัดหมาย',
+              step: 1, icon: Icons.calendar_month_rounded, title: '1. เลือกวันที่นัดหมาย',
               child: SizedBox(
                 height: 82,
                 child: ListView.builder(
@@ -1557,11 +1566,11 @@ class _BookingScreenState extends State<BookingScreen> {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         width: 58, margin: const EdgeInsets.only(right: 10),
+                        constraints: const BoxConstraints(minHeight: 48),
                         decoration: BoxDecoration(
-                          gradient: isSel ? const LinearGradient(colors: [Color(0xff52b788), Color(0xff186B44)], begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
-                          color: isWeekend ? Colors.grey.shade100 : (isSel ? null : lightGreen),
+                          color: isWeekend ? Colors.grey.shade100 : (isSel ? primaryGreen : Colors.white),
                           borderRadius: BorderRadius.circular(16),
-                          border: isSel ? null : Border.all(color: isWeekend ? Colors.grey.shade200 : primaryGreen.withValues(alpha: 0.15)),
+                          border: isSel ? null : Border.all(color: isWeekend ? Colors.grey.shade200 : lightGreen),
                           boxShadow: isSel ? [BoxShadow(color: primaryGreen.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 4))] : [],
                         ),
                         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -1575,11 +1584,11 @@ class _BookingScreenState extends State<BookingScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: kGapXL),
 
             // ── Step 2: นักกายภาพ ──
             _bookingCard(
-              step: 2, icon: Icons.person_rounded, title: 'เลือกนักกายภาพ',
+              step: 2, icon: Icons.person_rounded, title: '2. เลือกนักกายภาพ',
               child: loadingStaff
                 ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: primaryGreen)))
                 : staffList.isEmpty
@@ -1595,10 +1604,11 @@ class _BookingScreenState extends State<BookingScreen> {
                           duration: const Duration(milliseconds: 200),
                           margin: const EdgeInsets.only(bottom: 10),
                           padding: const EdgeInsets.all(12),
+                          constraints: const BoxConstraints(minHeight: 48),
                           decoration: BoxDecoration(
-                            color: isSel ? lightGreen : Colors.grey.shade50,
+                            color: isSel ? lightGreen : Colors.white,
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: isSel ? primaryGreen : Colors.grey.shade200, width: isSel ? 1.5 : 1),
+                            border: Border.all(color: isSel ? primaryGreen : lightGreen, width: isSel ? 1.5 : 1),
                           ),
                           child: Row(children: [
                             Stack(children: [
@@ -1624,11 +1634,11 @@ class _BookingScreenState extends State<BookingScreen> {
                       );
                     })),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: kGapXL),
 
             // ── Step 3: เครื่อง ──
             _bookingCard(
-              step: 3, icon: Icons.computer_rounded, title: 'เลือกเครื่องที่ใช้',
+              step: 3, icon: Icons.computer_rounded, title: '3. เลือกเครื่องที่ใช้',
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance.collection('machine_status').snapshots(),
                 builder: (context, machineSnap) {
@@ -1687,18 +1697,18 @@ class _BookingScreenState extends State<BookingScreen> {
                 },
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: kGapXL),
 
             // ── Step 4: เวลา ──
             _bookingCard(
-              step: 4, icon: Icons.access_time_rounded, title: 'เลือกเวลา',
+              step: 4, icon: Icons.access_time_rounded, title: '4. เลือกเวลา',
               child: loadingTimes
                 ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: primaryGreen)))
                 : availableTimes.isEmpty
                   ? _infoBox('ไม่มีช่วงเวลาที่เปิดในวันนี้', Colors.orange)
                   : GridView.builder(
                       shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 2.0, crossAxisSpacing: 10, mainAxisSpacing: 10),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 1.7, crossAxisSpacing: 10, mainAxisSpacing: 10),
                       itemCount: availableTimes.length,
                       itemBuilder: (_, i) {
                         bool isSel = i == selectedTimeIndex;
@@ -1707,45 +1717,49 @@ class _BookingScreenState extends State<BookingScreen> {
                           onTap: () => setState(() => selectedTimeIndex = i),
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
+                            constraints: const BoxConstraints(minHeight: 48),
                             decoration: BoxDecoration(
-                              gradient: isSel ? const LinearGradient(colors: [Color(0xff52b788), Color(0xff186B44)], begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
-                              color: isSel ? null : lightGreen,
+                              color: isSel ? primaryGreen : Colors.white,
                               borderRadius: BorderRadius.circular(12),
-                              border: isSel ? null : Border.all(color: primaryGreen.withValues(alpha: 0.2)),
+                              border: isSel ? null : Border.all(color: lightGreen),
                               boxShadow: isSel ? [BoxShadow(color: primaryGreen.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 3))] : [],
                             ),
-                            child: Center(child: Text(time, style: GoogleFonts.prompt(fontWeight: FontWeight.bold, fontSize: 15, color: isSel ? Colors.white : primaryGreen))),
+                            child: Center(child: Text(time, style: GoogleFonts.prompt(fontWeight: FontWeight.bold, fontSize: 15, color: isSel ? Colors.white : textDark))),
                           ),
                         );
                       },
                     ),
             ),
 
-            const SizedBox(height: 24),
-
-            // ── ปุ่มยืนยัน ──
-            if (staffList.isNotEmpty && availableTimes.isNotEmpty && selectedMachineId != null)
-              Container(
-                width: double.infinity, height: 58,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [Color(0xff52b788), Color(0xff186B44)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [BoxShadow(color: primaryGreen.withValues(alpha: 0.45), blurRadius: 16, offset: const Offset(0, 6))],
-                ),
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.transparent, shadowColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
-                  onPressed: isSubmitting ? null : submitBooking,
-                  child: isSubmitting
-                    ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                    : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                        const SizedBox(width: 10),
-                        Text('ยืนยันการจองคิว', style: GoogleFonts.notoSansThai(fontSize: 17, color: Colors.white, fontWeight: FontWeight.bold)),
-                      ]),
-                ),
-              ),
           ]),
         )),
+
+        // ===== Bottom-pinned submit button =====
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (!_canSubmit)
+              Padding(
+                padding: const EdgeInsets.only(bottom: kGapS),
+                child: Text(_missingHint, style: tCaption(const Color(0xffB7791F))),
+              ),
+            SizedBox(
+              width: double.infinity, height: 56,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryGreen, foregroundColor: Colors.white,
+                  disabledBackgroundColor: primaryGreen.withValues(alpha: 0.35),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
+                ),
+                onPressed: _canSubmit && !isSubmitting ? submitBooking : null,
+                child: isSubmitting
+                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text('จองคิว', style: GoogleFonts.notoSansThai(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ]),
+        ),
       ]),
     );
   }
@@ -1770,7 +1784,7 @@ class _BookingScreenState extends State<BookingScreen> {
         const SizedBox(width: 10),
         Icon(icon, color: primaryGreen, size: 18),
         const SizedBox(width: 6),
-        Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 14, color: textDark)),
+        Expanded(child: Text(title, style: tTitle())),
       ]),
       const SizedBox(height: 14),
       child,
