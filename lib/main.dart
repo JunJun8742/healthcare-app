@@ -1077,6 +1077,9 @@ class HomeScreen extends StatelessWidget {
       body: FutureBuilder<DocumentSnapshot>(
         future: FirebaseFirestore.instance.collection('users').doc(user?.uid).get(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
+          }
           String name = 'ผู้ใช้งาน';
           String photoBase64 = '';
           if (snap.hasData && snap.data!.exists) {
@@ -1110,6 +1113,7 @@ class HomeScreen extends StatelessWidget {
                     Row(children: [
                       Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                         Text('สวัสดี, ${name.split(' ').first}', style: GoogleFonts.notoSansThai(fontSize: 14, fontWeight: FontWeight.w600, color: textDark)),
+                        Text('จองคิวกายภาพบำบัด', style: tCaption()),
                       ]),
                       const SizedBox(width: 6),
                       const Text('👋', style: TextStyle(fontSize: 18)),
@@ -1131,6 +1135,9 @@ class HomeScreen extends StatelessWidget {
                     StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user?.uid).snapshots(),
                       builder: (context, snap) {
+                        if (snap.hasError) {
+                          return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
+                        }
                         String qNo = ''; String status = ''; String? activeDocId;
                         String time = '';
                         if (snap.hasData && snap.data!.docs.isNotEmpty) {
@@ -1144,7 +1151,8 @@ class HomeScreen extends StatelessWidget {
                           }
                         }
                         final bool hasQueue = qNo.isNotEmpty;
-                        Color statusColor = status == 'กำลังรักษา' ? Colors.orange.shade700 : status == 'เรียกคิว' ? Colors.blue.shade700 : primaryGreen;
+                        final s = statusInfo(status);
+                        Color statusColor = s.color;
 
                         return Container(
                           clipBehavior: Clip.hardEdge,
@@ -1173,7 +1181,7 @@ class HomeScreen extends StatelessWidget {
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(20, 20, 170, 20),
                                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+                                    Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w500)),
                                     const SizedBox(height: 4),
                                     Text(qNo, style: GoogleFonts.prompt(fontSize: 52, fontWeight: FontWeight.bold, color: primaryGreen, height: 1.1)),
                                     const SizedBox(height: 12),
@@ -1186,9 +1194,9 @@ class HomeScreen extends StatelessWidget {
                                         color: statusColor.withValues(alpha: 0.06),
                                       ),
                                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                        Icon(Icons.access_time_rounded, size: 14, color: statusColor),
+                                        Icon(s.icon, size: 14, color: statusColor),
                                         const SizedBox(width: 6),
-                                        Text(status, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 13)),
+                                        Text(s.label, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 14)),
                                       ]),
                                     ),
                                     const SizedBox(height: 12),
@@ -1196,13 +1204,13 @@ class HomeScreen extends StatelessWidget {
                                       Row(children: [
                                         Icon(Icons.schedule_rounded, size: 14, color: Colors.grey.shade500),
                                         const SizedBox(width: 6),
-                                        Text('นัดเวลา $time', style: GoogleFonts.notoSansThai(color: Colors.grey.shade600, fontSize: 12)),
+                                        Text('นัดเวลา $time', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14)),
                                       ]),
                                     if (activeDocId != null && status == 'กำลังรอ') ...[
                                       const SizedBox(height: 12),
                                       GestureDetector(
                                         onTap: () => _confirmCancel(context, activeDocId!),
-                                        child: Text('ยกเลิกคิว', style: GoogleFonts.notoSansThai(color: Colors.red.shade400, fontSize: 12, decoration: TextDecoration.underline)),
+                                        child: Text('ยกเลิกคิว', style: GoogleFonts.notoSansThai(color: Colors.red.shade400, fontSize: 14, decoration: TextDecoration.underline)),
                                       ),
                                     ],
                                   ]),
@@ -1214,11 +1222,9 @@ class HomeScreen extends StatelessWidget {
                                   Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.calendar_month_rounded, color: primaryGreen, size: 28)),
                                   const SizedBox(width: 16),
                                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text('ยังไม่มีคิว', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15, color: textDark)),
-                                    const SizedBox(height: 4),
-                                    Text('กดจองคิวเพื่อพบนักกายภาพบำบัด', style: GoogleFonts.notoSansThai(color: Colors.grey, fontSize: 12)),
+                                    Text('ยังไม่มีคิว — กดปุ่มด้านล่างเพื่อจองคิวแรกของคุณ', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15, color: textDark)),
                                   ])),
-                                  Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey.shade400),
+                                  Icon(Icons.arrow_forward_ios_rounded, size: 14, color: textSecondary),
                                 ]),
                               ),
                         );
@@ -1261,9 +1267,9 @@ class HomeScreen extends StatelessWidget {
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(children: [Icon(Icons.warning_amber_rounded, color: Colors.orange), SizedBox(width: 10), Text('ยืนยันการยกเลิกคิว', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))]),
-        content: const Text('คุณต้องการยกเลิกคิวนี้ใช่หรือไม่?\nไม่สามารถนำคิวกลับคืนได้', style: TextStyle(color: Colors.grey)),
+        content: Text('คุณต้องการยกเลิกคิวนี้ใช่หรือไม่?\nไม่สามารถนำคิวกลับคืนได้', style: TextStyle(color: textSecondary)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('ไม่ยกเลิก', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('ไม่ยกเลิก', style: TextStyle(color: textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
@@ -1294,7 +1300,7 @@ class HomeScreen extends StatelessWidget {
         child: Column(children: [
           _icon3D(icon, [const Color(0xff1b4332), const Color(0xff52b788)], 60),
           const SizedBox(height: 14),
-          Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, color: textDark, fontSize: 13), textAlign: TextAlign.center),
+          Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, color: textDark, fontSize: 14), textAlign: TextAlign.center),
           const SizedBox(height: 10),
           Container(
             width: 28, height: 28,
@@ -1329,7 +1335,8 @@ class HomeScreen extends StatelessWidget {
         child: Column(children: [
           _icon3D(icon, iconColors, 58),
           const SizedBox(height: 10),
-          Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, fontSize: 11, color: textDark), textAlign: TextAlign.center),
+          // 13px is the single allowed exception to the 14px minimum: 3-column layout, label duplicated by icon above.
+          Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, fontSize: 13, color: textDark), textAlign: TextAlign.center),
           const SizedBox(height: 8),
           Container(
             width: 24, height: 24,
@@ -1969,6 +1976,9 @@ class ActiveQueueScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user?.uid).snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
+          }
           if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
           if (!snap.hasData || snap.data!.docs.isEmpty) return _empty('คุณยังไม่มีคิวในขณะนี้');
           var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
@@ -1978,7 +1988,8 @@ class ActiveQueueScreen extends StatelessWidget {
           if (data['status'] == 'ยกเลิก') return _cancelled();
           String status = data['status'] ?? 'กำลังรอ';
           bool isWait = status == 'กำลังรอ', isCall = status == 'เรียกคิว', isTreat = status == 'กำลังรักษา';
-          Color statusColor = isTreat ? Colors.orange.shade700 : isCall ? Colors.blue.shade700 : primaryGreen;
+          final s = statusInfo(status);
+          Color statusColor = s.color;
 
           return ListView(
             padding: EdgeInsets.zero,
@@ -2024,7 +2035,7 @@ class ActiveQueueScreen extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 20, 165, 20),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+                          Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w500)),
                           const SizedBox(height: 4),
                           Text(data['queueNo'] ?? '-', style: GoogleFonts.prompt(fontSize: 52, fontWeight: FontWeight.bold, color: primaryGreen, height: 1.1)),
                           const SizedBox(height: 10),
@@ -2032,17 +2043,17 @@ class ActiveQueueScreen extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                             decoration: BoxDecoration(border: Border.all(color: statusColor.withValues(alpha: 0.4)), borderRadius: BorderRadius.circular(30), color: statusColor.withValues(alpha: 0.06)),
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.access_time_rounded, size: 14, color: statusColor),
+                              Icon(s.icon, size: 14, color: statusColor),
                               const SizedBox(width: 6),
-                              Text(status, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text(s.label, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 14)),
                             ]),
                           ),
                           const SizedBox(height: 10),
                           if ((data['time'] ?? '').isNotEmpty)
-                            Row(children: [Icon(Icons.schedule_rounded, size: 14, color: Colors.grey.shade500), const SizedBox(width: 6), Text('นัดเวลา ${data['time']}', style: GoogleFonts.notoSansThai(color: Colors.grey.shade600, fontSize: 12))]),
+                            Row(children: [Icon(Icons.schedule_rounded, size: 14, color: Colors.grey.shade500), const SizedBox(width: 6), Text('นัดเวลา ${data['time']}', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14))]),
                           const SizedBox(height: 4),
                           if ((data['doctor'] ?? '').isNotEmpty)
-                            Row(children: [Icon(Icons.person_outline, size: 14, color: Colors.grey.shade500), const SizedBox(width: 6), Expanded(child: Text(data['doctor'], style: GoogleFonts.notoSansThai(color: Colors.grey.shade600, fontSize: 12), overflow: TextOverflow.ellipsis))]),
+                            Row(children: [Icon(Icons.person_outline, size: 14, color: Colors.grey.shade500), const SizedBox(width: 6), Expanded(child: Text(data['doctor'], style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14), overflow: TextOverflow.ellipsis))]),
                         ]),
                       ),
                     ]),
@@ -2094,9 +2105,9 @@ class ActiveQueueScreen extends StatelessWidget {
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(children: [Icon(Icons.warning_amber_rounded, color: Colors.orange), SizedBox(width: 10), Text('ยืนยันการยกเลิกคิว', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18))]),
-        content: const Text('คุณต้องการยกเลิกคิวนี้ใช่หรือไม่?\nไม่สามารถนำคิวกลับคืนได้', style: TextStyle(color: Colors.grey)),
+        content: Text('คุณต้องการยกเลิกคิวนี้ใช่หรือไม่?\nไม่สามารถนำคิวกลับคืนได้', style: TextStyle(color: textSecondary)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('ไม่ยกเลิก', style: TextStyle(color: Colors.grey))),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('ไม่ยกเลิก', style: TextStyle(color: textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
@@ -2114,9 +2125,9 @@ class ActiveQueueScreen extends StatelessWidget {
   Widget _empty(String msg) => Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
     Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: lightGreen, shape: BoxShape.circle), child: const Icon(Icons.event_busy_rounded, size: 56, color: primaryGreen)),
     const SizedBox(height: 16),
-    Text(msg, style: GoogleFonts.notoSansThai(color: Colors.grey.shade600, fontSize: 16, fontWeight: FontWeight.w500)),
+    Text(msg, style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 16, fontWeight: FontWeight.w500)),
     const SizedBox(height: 8),
-    Text('กดแท็บ "หน้าแรก" เพื่อจองคิว', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 13)),
+    Text('กดแท็บ "หน้าแรก" เพื่อจองคิว', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14)),
   ]));
 
   Widget _cancelled() => Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -2124,7 +2135,7 @@ class ActiveQueueScreen extends StatelessWidget {
     const SizedBox(height: 16),
     Text('คิวถูกยกเลิกแล้ว', style: GoogleFonts.notoSansThai(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.red)),
     const SizedBox(height: 8),
-    Text('สามารถจองคิวใหม่ได้เลย', style: GoogleFonts.notoSansThai(color: Colors.grey, fontSize: 14)),
+    Text('สามารถจองคิวใหม่ได้เลย', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14)),
   ]));
 
   Widget _step(IconData icon, String title, String sub, bool done, {bool isActive = false, required bool isLast}) {
@@ -2147,9 +2158,9 @@ class ActiveQueueScreen extends StatelessWidget {
       Expanded(child: Padding(
         padding: EdgeInsets.only(top: 8, bottom: isLast ? 0 : 28),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15, color: done || isActive ? textDark : Colors.grey.shade400)),
+          Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15, color: done || isActive ? textDark : textSecondary)),
           const SizedBox(height: 3),
-          Text(sub, style: GoogleFonts.notoSansThai(color: Colors.grey.shade500, fontSize: 12)),
+          Text(sub, style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14)),
         ]),
       )),
       if (done && !isActive) const Icon(Icons.check_circle_rounded, color: primaryGreen, size: 20),
@@ -2167,16 +2178,6 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  Color _statusColor(String s) {
-    switch (s) {
-      case 'เสร็จสิ้น': return Colors.green;
-      case 'กำลังรักษา': return Colors.blue;
-      case 'เรียกคิว': return Colors.deepOrange;
-      case 'ยกเลิก': return Colors.red;
-      default: return Colors.orange;
-    }
-  }
-
   void _showDetail(BuildContext ctx, Map<String, dynamic> data) {
     showDialog(
       context: ctx,
@@ -2201,7 +2202,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Icon(icon, size: 18, color: primaryGreen), const SizedBox(width: 10),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        Text(label, style: TextStyle(fontSize: 14, color: textSecondary)),
         Text(val, style: const TextStyle(fontWeight: FontWeight.w600, color: textDark)),
       ])),
     ]),
@@ -2215,15 +2216,21 @@ class _HistoryScreenState extends State<HistoryScreen> {
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user?.uid).snapshots(),
         builder: (context, snap) {
+          if (snap.hasError) {
+            return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
+          }
           if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          if (!snap.hasData || snap.data!.docs.isEmpty) return const Center(child: Text('ยังไม่มีประวัติ', style: TextStyle(color: Colors.grey)));
+          if (!snap.hasData || snap.data!.docs.isEmpty) {
+            return const StateMessage(icon: Icons.history_toggle_off_rounded, message: 'ยังไม่มีประวัติ');
+          }
           var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
           return ListView.builder(
             padding: const EdgeInsets.all(16), itemCount: docs.length,
             itemBuilder: (context, i) {
               final data = docs[i].data() as Map<String, dynamic>;
               String status = data['status'] ?? 'กำลังรอ';
-              Color sc = _statusColor(status);
+              final s = statusInfo(status);
+              Color sc = s.color;
               bool isCancelled = status == 'ยกเลิก';
               return GestureDetector(
                 onTap: () => _showDetail(context, data),
@@ -2242,30 +2249,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
                           Row(children: [
-                            Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: sc.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.medical_services, color: sc, size: 18)),
+                            Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: sc.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)), child: Icon(s.icon, color: sc, size: 18)),
                             const SizedBox(width: 10),
                             Text('คิว ${data['queueNo'] ?? '-'}', style: GoogleFonts.prompt(fontWeight: FontWeight.bold, fontSize: 17, color: textDark)),
                           ]),
-                          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: sc.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Text(status, style: GoogleFonts.notoSansThai(color: sc, fontWeight: FontWeight.bold, fontSize: 11))),
+                          Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: sc.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Text(s.label, style: GoogleFonts.notoSansThai(color: sc, fontWeight: FontWeight.bold, fontSize: 14))),
                         ]),
                         const SizedBox(height: 8),
                         Text(data['doctor'] ?? '-', style: GoogleFonts.notoSansThai(color: textDark, fontWeight: FontWeight.w500)),
                         const SizedBox(height: 4),
                         Row(children: [
-                          const Icon(Icons.calendar_today, size: 13, color: Colors.grey), const SizedBox(width: 4),
-                          Text(data['date'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                          Icon(Icons.calendar_today, size: 13, color: textSecondary), const SizedBox(width: 4),
+                          Text(data['date'] ?? '', style: TextStyle(color: textSecondary, fontSize: 14)),
                           const SizedBox(width: 12),
-                          const Icon(Icons.access_time, size: 13, color: Colors.grey), const SizedBox(width: 4),
-                          Text(data['time'] ?? '', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                          Icon(Icons.access_time, size: 13, color: textSecondary), const SizedBox(width: 4),
+                          Text(data['time'] ?? '', style: TextStyle(color: textSecondary, fontSize: 14)),
                           if ((data['machineName'] ?? '').toString().isNotEmpty) ...[
                             const SizedBox(width: 12),
-                            const Icon(Icons.computer_rounded, size: 13, color: Colors.grey), const SizedBox(width: 4),
-                            Expanded(child: Text(data['machineName'], style: const TextStyle(color: Colors.grey, fontSize: 12), overflow: TextOverflow.ellipsis)),
+                            Icon(Icons.computer_rounded, size: 13, color: textSecondary), const SizedBox(width: 4),
+                            Expanded(child: Text(data['machineName'], style: TextStyle(color: textSecondary, fontSize: 14), overflow: TextOverflow.ellipsis)),
                           ],
                         ]),
                         if ((data['notes'] ?? '').toString().isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(8)), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Icon(Icons.note_alt_outlined, size: 14, color: primaryGreen), const SizedBox(width: 6), Expanded(child: Text(data['notes'], style: const TextStyle(fontSize: 12, color: primaryGreen)))])),
+                          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(8)), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Icon(Icons.note_alt_outlined, size: 14, color: primaryGreen), const SizedBox(width: 6), Expanded(child: Text(data['notes'], style: const TextStyle(fontSize: 14, color: primaryGreen)))])),
                         ],
                       ]),
                     ),
