@@ -1385,12 +1385,13 @@ class _BookingScreenState extends State<BookingScreen> {
   String? selectedMachineId;
   String selectedMachineName = '';
 
-  bool get _canSubmit => staffList.isNotEmpty && availableTimes.isNotEmpty && !loadingTimes && !loadingStaff;
+  bool get _canSubmit => staffList.isNotEmpty && availableTimes.isNotEmpty && selectedMachineId != null && !loadingTimes && !loadingStaff;
 
   String get _missingHint {
     if (loadingStaff || loadingTimes) return 'กำลังโหลดข้อมูล...';
     if (staffList.isEmpty) return 'ยังไม่มีเจ้าหน้าที่ให้เลือก';
     if (availableTimes.isEmpty) return 'ไม่มีเวลาว่างในวันนี้ กรุณาเลือกวันอื่น';
+    if (selectedMachineId == null) return 'กรุณาเลือกเครื่องที่ใช้';
     return '';
   }
 
@@ -1664,31 +1665,32 @@ class _BookingScreenState extends State<BookingScreen> {
                         duration: const Duration(milliseconds: 200),
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
+                        constraints: const BoxConstraints(minHeight: 48),
                         decoration: BoxDecoration(
-                          color: isSel ? sColor.withValues(alpha: 0.07) : Colors.grey.shade50,
+                          color: isSel ? primaryGreen : Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: isSel ? sColor : Colors.grey.shade200, width: isSel ? 1.5 : 1),
+                          border: Border.all(color: isSel ? primaryGreen : lightGreen, width: isSel ? 1.5 : 1),
                         ),
                         child: Row(children: [
                           Container(
                             width: 42, height: 42,
-                            decoration: BoxDecoration(color: sColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                            child: Icon(sIcon, color: sColor, size: 22),
+                            decoration: BoxDecoration(color: isSel ? Colors.white.withValues(alpha: 0.2) : sColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                            child: Icon(sIcon, color: isSel ? Colors.white : sColor, size: 22),
                           ),
                           const SizedBox(width: 12),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(name, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 14, color: textDark)),
+                            Text(name, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 14, color: isSel ? Colors.white : textDark)),
                             const SizedBox(height: 2),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(color: sColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                              child: Text(sText, style: GoogleFonts.notoSansThai(fontSize: 11, color: sColor, fontWeight: FontWeight.w600)),
+                              decoration: BoxDecoration(color: isSel ? Colors.white.withValues(alpha: 0.2) : sColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                              child: Text(sText, style: GoogleFonts.notoSansThai(fontSize: 11, color: isSel ? Colors.white : sColor, fontWeight: FontWeight.w600)),
                             ),
                           ])),
                           if (isSel) Container(
                             width: 26, height: 26,
-                            decoration: BoxDecoration(color: sColor, shape: BoxShape.circle),
-                            child: const Icon(Icons.check_rounded, color: Colors.white, size: 15),
+                            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                            child: const Icon(Icons.check_rounded, color: primaryGreen, size: 15),
                           ),
                         ]),
                       ),
