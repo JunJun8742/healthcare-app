@@ -2574,13 +2574,55 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     );
   }
 
-  Future<void> _update(String docId, String status, {String notes = ''}) async {
-    Map<String, dynamic> data = {'status': status};
-    if (status == 'เสร็จสิ้น') { data['completedAt'] = FieldValue.serverTimestamp(); if (notes.isNotEmpty) data['notes'] = notes; }
-    await FirebaseFirestore.instance.collection('appointments').doc(docId).update(data);
+  Future<void> _changeStatus(BuildContext context, String docId, String queueNo, String patientName, String fromStatus, String toStatus, {Map<String, dynamic> extra = const {}}) async {
+    final s = statusInfo(toStatus);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('ยืนยันเปลี่ยนสถานะ', style: tTitle()),
+        content: Text('เปลี่ยนคิว $queueNo — $patientName\nเป็น "${s.label}" ใช่หรือไม่?', style: tBody()),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: Text('ไม่ใช่', style: tBody(textSecondary))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: s.color, foregroundColor: Colors.white, minimumSize: const Size(100, 48)),
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('ยืนยัน'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': toStatus, 'updatedAt': FieldValue.serverTimestamp(), ...extra});
+    if (!context.mounted) return;
+    final undoable = toStatus == 'ยกเลิก' || toStatus == 'เสร็จสิ้น';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('เปลี่ยนสถานะคิว $queueNo เป็น ${s.label} แล้ว', style: GoogleFonts.notoSansThai()),
+      backgroundColor: s.color,
+      duration: const Duration(seconds: 5),
+      action: undoable
+          ? SnackBarAction(label: 'เลิกทำ', textColor: Colors.white, onPressed: () {
+              FirebaseFirestore.instance.collection('appointments').doc(docId)
+                  .update({'status': fromStatus, 'updatedAt': FieldValue.serverTimestamp()});
+            })
+          : null,
+    ));
   }
 
-  void _completeDialog(BuildContext ctx, String docId) {
+  Future<void> _callNext(BuildContext context, List<QueryDocumentSnapshot> docs) async {
+    final waiting = docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == 'กำลังรอ').toList()
+      ..sort((a, b) => ((a.data() as Map<String, dynamic>)['queueNo'] ?? '').toString()
+          .compareTo(((b.data() as Map<String, dynamic>)['queueNo'] ?? '').toString()));
+    if (waiting.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('ไม่มีคิวที่กำลังรอในวันนี้', style: GoogleFonts.notoSansThai()), backgroundColor: Colors.orange));
+      return;
+    }
+    final m = waiting.first.data() as Map<String, dynamic>;
+    await _changeStatus(context, waiting.first.id, m['queueNo'] ?? '', m['patientName'] ?? '', 'กำลังรอ', 'เรียกคิว');
+  }
+
+  void _completeDialog(BuildContext ctx, String docId, String queueNo, String patientName) {
     final notesCtrl = TextEditingController();
     showDialog(
       context: ctx,
@@ -2594,7 +2636,16 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white), onPressed: () { Navigator.pop(ctx); _update(docId, 'เสร็จสิ้น', notes: notesCtrl.text.trim()); }, child: const Text('ยืนยันเสร็จสิ้น')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+            onPressed: () {
+              Navigator.pop(ctx);
+              final notes = notesCtrl.text.trim();
+              _changeStatus(ctx, docId, queueNo, patientName, 'กำลังรักษา', 'เสร็จสิ้น',
+                  extra: {'completedAt': FieldValue.serverTimestamp(), if (notes.isNotEmpty) 'notes': notes});
+            },
+            child: const Text('ยืนยันเสร็จสิ้น'),
+          ),
         ],
       ),
     );
@@ -2717,6 +2768,23 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
               ]),
             ),
             const Divider(height: 1),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: () => _callNext(context, allDocs),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryGreen,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
+                  ),
+                  icon: const Icon(Icons.campaign_rounded),
+                  label: Text('เรียกคิวถัดไป', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15)),
+                ),
+              ),
+            ),
             Expanded(
               child: docs.isEmpty
                 ? const StateMessage(icon: Icons.inbox_rounded, message: 'ไม่พบคิวตามเงื่อนไขที่เลือก')
@@ -2726,22 +2794,24 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                     itemBuilder: (_, i) {
                       var doc = docs[i]; var data = doc.data() as Map<String, dynamic>;
                       String status = data['status'] ?? 'กำลังรอ';
+                      String queueNo = data['queueNo'] ?? '-';
+                      String patientName = data['patientName'] ?? '-';
                       Color statusColor; IconData sIcon; List<Color> btnGrad; String btnLabel; VoidCallback? btnAction;
                       switch (status) {
                         case 'เรียกคิว':
                           statusColor = Colors.blue.shade600; sIcon = Icons.campaign_rounded;
                           btnGrad = [Colors.blue.shade400, Colors.blue.shade700]; btnLabel = 'เริ่มรักษา';
-                          btnAction = () => _update(doc.id, 'กำลังรักษา');
+                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, 'เรียกคิว', 'กำลังรักษา');
                           break;
                         case 'กำลังรักษา':
                           statusColor = Colors.orange.shade700; sIcon = Icons.medical_services_rounded;
                           btnGrad = [Colors.green.shade400, const Color(0xff186B44)]; btnLabel = 'เสร็จสิ้น';
-                          btnAction = () => _completeDialog(context, doc.id);
+                          btnAction = () => _completeDialog(context, doc.id, queueNo, patientName);
                           break;
                         default:
                           statusColor = primaryGreen; sIcon = Icons.access_time_rounded;
                           btnGrad = [Colors.blue.shade300, Colors.blue.shade700]; btnLabel = 'เรียกคิว';
-                          btnAction = () => _update(doc.id, 'เรียกคิว');
+                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, 'กำลังรอ', 'เรียกคิว');
                       }
                       return Container(
                         margin: const EdgeInsets.only(bottom: 14),
