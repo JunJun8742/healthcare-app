@@ -784,7 +784,8 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
     } on FirebaseException catch (e) {
       if (mounted) _snack('อ่านข้อมูล Invite Code ไม่สำเร็จ (${e.code}) กรุณาตรวจสอบสิทธิ์การเข้าถึง Firestore');
     } catch (e) {
-      if (mounted) _snack('เกิดข้อผิดพลาด: $e');
+      debugPrint('Staff register error: $e');
+      if (mounted) _snack('เกิดข้อผิดพลาด กรุณาลองใหม่');
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -2312,7 +2313,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await FirebaseFirestore.instance.collection('users').doc(uid).update({'photoBase64': base64Str});
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('อัปโหลดไม่สำเร็จ: $e'), backgroundColor: Colors.red));
+      debugPrint('Photo upload error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อินเทอร์เน็ตขัดข้อง กรุณาตรวจสอบการเชื่อมต่อ'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => isUploading = false);
     }
@@ -2456,7 +2458,8 @@ class _SOSScreenState extends State<SOSScreen> {
         );
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      debugPrint('SOS send error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เกิดข้อผิดพลาด กรุณาลองใหม่')));
     } finally {
       if (mounted) setState(() => isSending = false);
     }
@@ -3357,7 +3360,8 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
       await FirebaseFirestore.instance.collection('staff_availability').doc(_docId()).set({'staffUid': FirebaseAuth.instance.currentUser?.uid ?? '', 'date': dateStr, 'times': sorted, 'updatedAt': FieldValue.serverTimestamp()});
       if (mounted) { setState(() => isLocked = true); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกเวลาว่างสำหรับ $dateStr แล้ว'), backgroundColor: Colors.green)); }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
+      debugPrint('Save availability error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อินเทอร์เน็ตขัดข้อง กรุณาตรวจสอบการเชื่อมต่อ'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }
@@ -3585,7 +3589,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerPr
       await batch.commit();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ลบบัญชี "$name" เรียบร้อยแล้ว'), backgroundColor: primaryGreen));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
+      debugPrint('Delete account error: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เกิดข้อผิดพลาด กรุณาลองใหม่'), backgroundColor: Colors.red));
     }
   }
 
