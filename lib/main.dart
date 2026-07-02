@@ -2535,8 +2535,44 @@ class _StaffNavigationState extends State<StaffNavigation> {
 }
 
 // Staff: Queue Management + MachineStatusCard
-class StaffQueueScreen extends StatelessWidget {
+class StaffQueueScreen extends StatefulWidget {
   const StaffQueueScreen({super.key});
+  @override
+  State<StaffQueueScreen> createState() => _StaffQueueScreenState();
+}
+
+class _StaffQueueScreenState extends State<StaffQueueScreen> {
+  DateTime selectedDay = DateTime.now();
+  String searchQuery = '';
+  String statusFilter = ''; // '' = ทั้งหมด
+  bool _isCustomDay = false;
+  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year + 543}';
+  bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Widget _dayChip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
+    label: Text(label, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, color: selected ? Colors.white : textDark)),
+    selected: selected,
+    onSelected: (_) => onTap(),
+    selectedColor: primaryGreen,
+    backgroundColor: Colors.grey.shade100,
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
+  );
+
+  Widget _statusChip(String status) {
+    final selected = statusFilter == status;
+    final info = status.isEmpty ? null : statusInfo(status);
+    final label = status.isEmpty ? 'ทั้งหมด' : info!.label;
+    final color = status.isEmpty ? primaryGreen : info!.color;
+    return ChoiceChip(
+      label: Text(label, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, fontSize: 13, color: selected ? Colors.white : color)),
+      selected: selected,
+      onSelected: (_) => setState(() => statusFilter = status),
+      selectedColor: color,
+      backgroundColor: color.withValues(alpha: 0.08),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: color.withValues(alpha: 0.3))),
+    );
+  }
 
   Future<void> _update(String docId, String status, {String notes = ''}) async {
     Map<String, dynamic> data = {'status': status};
@@ -2571,11 +2607,20 @@ class StaffQueueScreen extends StatelessWidget {
       body: SafeArea(
         bottom: false,
         child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('appointments').snapshots(),
+        stream: FirebaseFirestore.instance.collection('appointments').where('date', isEqualTo: _fmtDate(selectedDay)).snapshots(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
-          var docs = (snap.data?.docs ?? []).where((d) => !['เสร็จสิ้น', 'ยกเลิก'].contains(d['status'])).toList()
+          var allDocs = (snap.data?.docs ?? []).where((d) => !['เสร็จสิ้น', 'ยกเลิก'].contains(d['status'])).toList()
             ..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return ta.compareTo(tb); });
+          var docs = allDocs.where((d) {
+            final m = d.data() as Map<String, dynamic>;
+            final okStatus = statusFilter.isEmpty || m['status'] == statusFilter;
+            final q = searchQuery.toLowerCase();
+            final okSearch = q.isEmpty ||
+                (m['patientName'] ?? '').toString().toLowerCase().contains(q) ||
+                (m['queueNo'] ?? '').toString().contains(q);
+            return okStatus && okSearch;
+          }).toList();
           int waiting = docs.where((d) => d['status'] == 'กำลังรอ').length;
           int calling = docs.where((d) => d['status'] == 'เรียกคิว').length;
           int treating = docs.where((d) => d['status'] == 'กำลังรักษา').length;
@@ -2615,15 +2660,66 @@ class StaffQueueScreen extends StatelessWidget {
               ]),
             ),
             const Divider(height: 1),
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(
+                  height: 48,
+                  child: ListView(scrollDirection: Axis.horizontal, children: [
+                    _dayChip('วันนี้', _isSameDay(selectedDay, DateTime.now()) && !_isCustomDay, () {
+                      setState(() { selectedDay = DateTime.now(); _isCustomDay = false; });
+                    }),
+                    const SizedBox(width: kGapS),
+                    _dayChip('พรุ่งนี้', _isSameDay(selectedDay, DateTime.now().add(const Duration(days: 1))) && !_isCustomDay, () {
+                      setState(() { selectedDay = DateTime.now().add(const Duration(days: 1)); _isCustomDay = false; });
+                    }),
+                    const SizedBox(width: kGapS),
+                    _dayChip(_isCustomDay ? _fmtDate(selectedDay) : 'เลือกวัน', _isCustomDay, () async {
+                      final now = DateTime.now();
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDay,
+                        firstDate: now.subtract(const Duration(days: 30)),
+                        lastDate: now.add(const Duration(days: 30)),
+                        locale: const Locale('th'),
+                      );
+                      if (picked != null) setState(() { selectedDay = picked; _isCustomDay = true; });
+                    }),
+                  ]),
+                ),
+                const SizedBox(height: kGapM),
+                TextField(
+                  onChanged: (v) => setState(() => searchQuery = v.trim()),
+                  style: tBody(),
+                  decoration: InputDecoration(
+                    hintText: 'ค้นหาชื่อผู้ป่วยหรือเลขคิว',
+                    hintStyle: tCaption(),
+                    prefixIcon: const Icon(Icons.search_rounded, color: primaryGreen),
+                    filled: true, fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: BorderSide.none),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: BorderSide(color: Colors.grey.shade200)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: const BorderSide(color: primaryGreen)),
+                  ),
+                ),
+                const SizedBox(height: kGapM),
+                SizedBox(
+                  height: 40,
+                  child: ListView(scrollDirection: Axis.horizontal, children: [
+                    for (final s in const ['', 'กำลังรอ', 'เรียกคิว', 'กำลังรักษา', 'เสร็จสิ้น'])
+                      Padding(
+                        padding: const EdgeInsets.only(right: kGapS),
+                        child: _statusChip(s),
+                      ),
+                  ]),
+                ),
+              ]),
+            ),
+            const Divider(height: 1),
             Expanded(
               child: docs.isEmpty
-                ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Container(padding: const EdgeInsets.all(28), decoration: BoxDecoration(color: lightGreen, shape: BoxShape.circle), child: Image.asset('assets/hart.png', width: 52)),
-                    const SizedBox(height: 18),
-                    Text('ไม่มีคิวค้างอยู่ในขณะนี้', style: GoogleFonts.notoSansThai(color: Colors.grey.shade500, fontSize: 16, fontWeight: FontWeight.w500)),
-                    const SizedBox(height: 4),
-                    Text('ผู้ป่วยทุกคนได้รับการดูแลแล้ว', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 13)),
-                  ]))
+                ? const StateMessage(icon: Icons.inbox_rounded, message: 'ไม่พบคิวตามเงื่อนไขที่เลือก')
                 : ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                     itemCount: docs.length,
