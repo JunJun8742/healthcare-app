@@ -2959,6 +2959,47 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
 
   Future<void> resolve(String docId) async => FirebaseFirestore.instance.collection('sos_alerts').doc(docId).update({'status': 'รับเรื่องแล้ว', 'resolvedAt': FieldValue.serverTimestamp()});
 
+  Future<void> _confirmResolve(BuildContext context, String docId, String patientName) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('ยืนยันรับเรื่อง SOS', style: tTitle()),
+        content: Text('รับเรื่องแจ้งเหตุฉุกเฉินของ $patientName ใช่หรือไม่?', style: tBody()),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dCtx, false), child: Text('ไม่ใช่', style: tBody(textSecondary))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xffB91C1C), foregroundColor: Colors.white, minimumSize: const Size(100, 48)),
+            onPressed: () => Navigator.pop(dCtx, true),
+            child: const Text('ยืนยัน'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await resolve(docId);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('รับเรื่อง SOS ของ $patientName แล้ว', style: GoogleFonts.notoSansThai()),
+      backgroundColor: primaryGreen,
+    ));
+  }
+
+  Widget _sosIcon3D(IconData icon, List<Color> colors, double size) {
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: BorderRadius.circular(size * 0.28),
+        boxShadow: [
+          BoxShadow(color: colors.last.withValues(alpha: 0.45), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(color: colors.last.withValues(alpha: 0.25), blurRadius: 20, offset: const Offset(0, 8)),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: size * 0.52),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -3016,13 +3057,7 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
     stream: FirebaseFirestore.instance.collection('sos_alerts').where('status', isEqualTo: 'รอรับเรื่อง').snapshots(),
     builder: (ctx, snap) {
       if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.red));
-      if (!snap.hasData || snap.data!.docs.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Image.asset('assets/hart.png', width: 120),
-        const SizedBox(height: 18),
-        Text('ไม่มีเหตุฉุกเฉินในขณะนี้', style: GoogleFonts.notoSansThai(color: Colors.grey.shade500, fontSize: 16, fontWeight: FontWeight.w500)),
-        const SizedBox(height: 4),
-        Text('สถานการณ์ปลอดภัย', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 13)),
-      ]));
+      if (!snap.hasData || snap.data!.docs.isEmpty) return const StateMessage(icon: Icons.verified_user_rounded, message: 'ไม่มีเหตุฉุกเฉินในขณะนี้');
       var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
       return ListView.builder(padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), itemCount: docs.length, itemBuilder: (_, i) {
         var doc = docs[i]; var data = doc.data() as Map<String, dynamic>;
@@ -3031,9 +3066,9 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xffFEF2F2),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.red.shade100, width: 1.5),
+            border: Border.all(color: const Color(0xffB91C1C), width: 1.5),
             boxShadow: [
               BoxShadow(color: Colors.red.withValues(alpha: 0.18), blurRadius: 20, offset: const Offset(0, 6)),
               BoxShadow(color: Colors.red.withValues(alpha: 0.07), blurRadius: 40, offset: const Offset(0, 12)),
@@ -3061,24 +3096,28 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
               ]),
             ),
             Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [Icon(Icons.medical_information_outlined, size: 16, color: Colors.red.shade600), const SizedBox(width: 8), Expanded(child: Text('อาการ: ${data['issue'] ?? '-'}', style: GoogleFonts.notoSansThai(fontSize: 14, fontWeight: FontWeight.w700, color: textDark)))]),
-              const SizedBox(height: 6),
-              Row(children: [Icon(Icons.person_outline, size: 16, color: Colors.grey.shade400), const SizedBox(width: 8), Text(data['patientName'] ?? 'ไม่ระบุ', style: GoogleFonts.notoSansThai(color: Colors.grey.shade600, fontSize: 13))]),
+              Row(children: [
+                _sosIcon3D(Icons.sos_rounded, [Colors.red.shade300, Colors.red.shade700], 48),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(data['patientName'] ?? 'ไม่ระบุ', style: tTitle()),
+                  const SizedBox(height: 3),
+                  Text('อาการ: ${data['issue'] ?? '-'}', style: GoogleFonts.notoSansThai(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.red.shade700)),
+                ])),
+              ]),
               const SizedBox(height: 14),
-              GestureDetector(
-                onTap: () => resolve(doc.id),
-                child: Container(
-                  width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 13),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [Colors.red.shade700, Colors.red.shade500], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: Colors.red.withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 4))],
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xffB91C1C),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
                   ),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.directions_run_rounded, color: Colors.white, size: 18),
-                    const SizedBox(width: 8),
-                    Text('รับเรื่อง / เข้าช่วยเหลือทันที', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                  ]),
+                  onPressed: () => _confirmResolve(context, doc.id, data['patientName'] ?? 'ไม่ระบุ'),
+                  child: Text('รับเรื่องแล้ว', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                 ),
               ),
             ])),
