@@ -1450,14 +1450,14 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
-  Future<void> submitBooking() async {
+  Future<String?> submitBooking() async {
     try {
       setState(() => isSubmitting = true);
       User? user = FirebaseAuth.instance.currentUser;
       var existing = await FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user!.uid).where('status', whereIn: ['กำลังรอ', 'เรียกคิว', 'กำลังรักษา']).get();
       if (existing.docs.isNotEmpty) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คุณมีคิวที่ยังไม่เสร็จสิ้นอยู่แล้ว'), backgroundColor: Colors.orange));
-        return;
+        return null;
       }
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
@@ -1477,6 +1477,7 @@ class _BookingScreenState extends State<BookingScreen> {
       DocumentReference<Map<String, dynamic>> apptRef =
           FirebaseFirestore.instance.collection('appointments').doc();
 
+      String? assignedQueueNo;
       await FirebaseFirestore.instance.runTransaction((transaction) async {
         DocumentSnapshot<Map<String, dynamic>> daySnap = await transaction.get(dayCounterRef);
         DocumentSnapshot<Map<String, dynamic>> slotSnap = await transaction.get(slotRef);
@@ -1488,6 +1489,7 @@ class _BookingScreenState extends State<BookingScreen> {
         }
         int nextNum = (dayData?['count'] ?? 0) + 1;
         String qNo = nextNum.toString().padLeft(3, '0');
+        assignedQueueNo = qNo;
 
         transaction.set(dayCounterRef, {
           'date': dateStr,
@@ -1510,15 +1512,81 @@ class _BookingScreenState extends State<BookingScreen> {
         });
       });
 
-      if (mounted) {
-        Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainNavigation()), (r) => false);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('จองคิวสำเร็จ!'), backgroundColor: Colors.green));
-      }
+      return assignedQueueNo;
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+      return null;
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }
+  }
+
+  void _showConfirmSheet() {
+    final staff = staffList[selectedStaffIndex];
+    final dateStr = _fmt(upcomingDays[selectedDateIndex]);
+    final time = availableTimes[selectedTimeIndex];
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetCtx) {
+        bool submitting = false;
+        String? error;
+        return StatefulBuilder(builder: (sheetCtx, setSheet) {
+          Widget row(IconData ic, String label, String value) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(children: [
+              Icon(ic, color: primaryGreen, size: 22),
+              const SizedBox(width: kGapM),
+              Text(label, style: tCaption()),
+              const Spacer(),
+              Flexible(child: Text(value, style: GoogleFonts.notoSansThai(fontSize: 16, fontWeight: FontWeight.w600, color: textDark), textAlign: TextAlign.end)),
+            ]),
+          );
+          return Padding(
+            padding: EdgeInsets.fromLTRB(20, 20, 20, 24 + MediaQuery.of(sheetCtx).viewInsets.bottom),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('ยืนยันการจองคิว', style: tTitle(), textAlign: TextAlign.center),
+              const SizedBox(height: kGapL),
+              row(Icons.person_rounded, 'เจ้าหน้าที่', staff['fullname'] ?? 'นักกายภาพ'),
+              row(Icons.calendar_month_rounded, 'วันที่', dateStr),
+              row(Icons.access_time_rounded, 'เวลา', time),
+              if (error != null) ...[
+                const SizedBox(height: kGapM),
+                Text(error!, style: tCaption(const Color(0xffB91C1C)), textAlign: TextAlign.center),
+              ],
+              const SizedBox(height: kGapXL),
+              SizedBox(height: 56, child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: primaryGreen, foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius))),
+                onPressed: submitting ? null : () async {
+                  setSheet(() { submitting = true; error = null; });
+                  final qNo = await submitBooking();
+                  if (!sheetCtx.mounted) return;
+                  if (qNo != null) {
+                    Navigator.pop(sheetCtx);
+                    if (mounted) {
+                      Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const MainNavigation()), (r) => false);
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('จองคิวสำเร็จ! คิวของคุณคือ $qNo'), backgroundColor: Colors.green));
+                    }
+                  } else {
+                    setSheet(() { submitting = false; error = 'จองไม่สำเร็จ ช่วงเวลานี้อาจถูกจองแล้ว กรุณาเลือกเวลาใหม่'; });
+                    _loadAvailability();
+                  }
+                },
+                child: submitting
+                    ? const SizedBox(width: 26, height: 26, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3))
+                    : Text('ยืนยันการจอง', style: GoogleFonts.notoSansThai(fontSize: 18, fontWeight: FontWeight.bold)),
+              )),
+              TextButton(
+                onPressed: submitting ? null : () => Navigator.pop(sheetCtx),
+                child: Text('ยกเลิก', style: tBody(textSecondary)),
+              ),
+            ]),
+          );
+        });
+      },
+    );
   }
 
   @override
@@ -1754,7 +1822,7 @@ class _BookingScreenState extends State<BookingScreen> {
                   disabledBackgroundColor: primaryGreen.withValues(alpha: 0.35),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
                 ),
-                onPressed: _canSubmit && !isSubmitting ? submitBooking : null,
+                onPressed: _canSubmit && !isSubmitting ? _showConfirmSheet : null,
                 child: isSubmitting
                   ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                   : Text('จองคิว', style: GoogleFonts.notoSansThai(fontSize: 18, fontWeight: FontWeight.bold)),
