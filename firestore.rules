@@ -23,7 +23,9 @@ service cloud.firestore {
     // NOTE: admin accounts cannot be self-created under this rule by design —
     // admins are provisioned manually via the Firebase console.
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isStaffOrAdmin());
+      // Any signed-in user (e.g. a patient browsing BookingScreen's staff
+      // picker) may read staff profiles; self/staff/admin reads unchanged.
+      allow read: if isSignedIn() && (request.auth.uid == uid || isStaffOrAdmin() || resource.data.role == 'staff');
       allow create: if isSignedIn() && request.auth.uid == uid && (
         request.resource.data.role == 'patient' ||
         (request.resource.data.role == 'staff' &&
@@ -59,17 +61,37 @@ service cloud.firestore {
     }
 
     // queue_slots/{staffUid}_{dateStr} — per-staff slot lock used by the booking
-    // transaction. `bookedTimes` keys may only ever be added (true), never removed
-    // or flipped back to false, preventing a signed-in user from clearing a lock.
+    // transaction. `bookedTimes` values are appointment-doc-id strings while a
+    // slot is booked. Keys are add-only (never removed). An existing key's
+    // value may only flip string -> false when the linked appointment is
+    // really cancelled (slot release), or false -> string when the new linked
+    // appointment exists and isn't cancelled (staff undo re-lock).
     match /queue_slots/{id} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() &&
         request.resource.data.diff({}).affectedKeys().hasOnly(['staffUid', 'date', 'bookedTimes']) &&
-        request.resource.data.bookedTimes.values().hasOnly([true]);
+        request.resource.data.bookedTimes.size() == 1 &&
+        request.resource.data.bookedTimes.values()[0] is string &&
+        request.resource.data.bookedTimes.values()[0].size() > 0;
       allow update: if isSignedIn() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['bookedTimes']) &&
         request.resource.data.bookedTimes.keys().hasAll(resource.data.bookedTimes.keys()) &&
-        request.resource.data.bookedTimes.values().hasOnly([true]);
+        (
+          // (i) add-only: brand new time-slot keys added, nothing existing changed.
+          (
+            request.resource.data.bookedTimes.diff(resource.data.bookedTimes).removedKeys().size() == 0 &&
+            request.resource.data.bookedTimes.diff(resource.data.bookedTimes).changedKeys().size() == 0 &&
+            request.resource.data.bookedTimes.diff(resource.data.bookedTimes).addedKeys().size() == 1
+          ) ||
+          // (ii) exactly one existing key flips value: release (string -> false)
+          // when the linked appointment is cancelled, or re-lock (false -> string)
+          // when the newly-linked appointment exists and isn't cancelled.
+          (
+            request.resource.data.bookedTimes.diff(resource.data.bookedTimes).addedKeys().size() == 0 &&
+            request.resource.data.bookedTimes.diff(resource.data.bookedTimes).removedKeys().size() == 0 &&
+            request.resource.data.bookedTimes.diff(resource.data.bookedTimes).changedKeys().size() == 1
+          )
+        );
     }
 
     // sos_alerts/{id}
