@@ -2,6 +2,8 @@
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:google_fonts/google_fonts.dart';
@@ -11,6 +13,25 @@ import 'package:image_picker/image_picker.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  try {
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    await localNotifications.initialize(
+      settings: const InitializationSettings(android: androidInit),
+      onDidReceiveNotificationResponse: (resp) {
+        try {
+          final data = jsonDecode(resp.payload ?? '{}') as Map<String, dynamic>;
+          _routeFromNotification(data['type'] as String?);
+        } catch (_) {}
+      },
+    );
+    final androidPlugin = localNotifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(const AndroidNotificationChannel('healthcare_default', 'การแจ้งเตือนทั่วไป', importance: Importance.high));
+    await androidPlugin?.createNotificationChannel(const AndroidNotificationChannel('sos_channel', 'แจ้งเตือนฉุกเฉิน SOS', importance: Importance.max));
+    final initialMsg = await FirebaseMessaging.instance.getInitialMessage();
+    pendingNotifType = initialMsg?.data['type'] as String?;
+  } catch (e) {
+    debugPrint('Notification init error: $e');
+  }
   runApp(const HealthcareStation());
 }
 
@@ -21,6 +42,14 @@ const Color primaryGreen = Color(0xff186B44);
 const Color lightGreen = Color(0xffE6F4EA);
 const Color bgWhite = Color(0xffF7FCF9);
 const Color textDark = Color(0xff2D312F);
+
+// ===== Push notifications: navigation + FCM registration state =====
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
+String? pendingNotifType; // ประเภทแจ้งเตือนที่แตะจากสถานะปิดแอป — ใช้ครั้งเดียวตอน AuthGate สร้างหน้าแรก
+String? currentUserRole;
+bool _fcmRegistered = false;
+bool _fcmListenersAttached = false;
 
 // ===== Design tokens =====
 const double kRadius = 16;
@@ -117,6 +146,7 @@ class HealthcareStation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'Healthcare Station',
       localizationsDelegates: const [
@@ -151,6 +181,87 @@ class HealthcareStation extends StatelessWidget {
 }
 
 // ==========================================
+// Push notifications: tap routing + FCM token lifecycle
+// ==========================================
+// กำหนดปลายทางที่จะเปิดเมื่อผู้ใช้แตะแจ้งเตือน ตามบทบาทผู้ใช้ + ประเภทแจ้งเตือน
+void _routeFromNotification(String? type) {
+  if (type == null) return;
+  const patientTargets = {'queue_called', 'morning_reminder', 'booking_cancelled'};
+  const staffQueueTargets = {'booking_created', 'booking_cancelled'};
+  Widget root;
+  if (currentUserRole == 'patient' && patientTargets.contains(type)) {
+    root = const MainNavigation(initialIndex: 1);
+  } else if (currentUserRole == 'staff' && type == 'sos_new') {
+    root = const StaffNavigation(initialIndex: 1);
+  } else if (currentUserRole == 'staff' && staffQueueTargets.contains(type)) {
+    root = const StaffNavigation(initialIndex: 0);
+  } else {
+    return;
+  }
+  appNavigatorKey.currentState?.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => root), (r) => false);
+}
+
+// ลงทะเบียน FCM token ให้ users/{uid}.fcmTokens — เรียกครั้งเดียวต่อ session (กันซ้ำด้วย _fcmRegistered)
+// ห้าม throw ออกไปนอกฟังก์ชันนี้เด็ดขาด: บน emulator ที่ไม่มี Play Services การขอ token จะ error
+// ซึ่งต้องไม่ทำให้แอปเปิดไม่ได้
+Future<void> _registerFcm(String uid) async {
+  _fcmRegistered = true;
+  try {
+    await FirebaseMessaging.instance.requestPermission();
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({'fcmTokens': FieldValue.arrayUnion([token])}, SetOptions(merge: true));
+    }
+    if (!_fcmListenersAttached) {
+      _fcmListenersAttached = true;
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        final currentUid = FirebaseAuth.instance.currentUser?.uid;
+        if (currentUid == null) return;
+        FirebaseFirestore.instance.collection('users').doc(currentUid).set({'fcmTokens': FieldValue.arrayUnion([newToken])}, SetOptions(merge: true));
+      });
+      FirebaseMessaging.onMessage.listen((message) {
+        final notification = message.notification;
+        if (notification == null) return;
+        final type = message.data['type'];
+        final isSos = type == 'sos_new';
+        localNotifications.show(
+          id: message.hashCode,
+          title: notification.title,
+          body: notification.body,
+          notificationDetails: NotificationDetails(android: AndroidNotificationDetails(
+            isSos ? 'sos_channel' : 'healthcare_default',
+            isSos ? 'แจ้งเตือนฉุกเฉิน SOS' : 'การแจ้งเตือนทั่วไป',
+            importance: isSos ? Importance.max : Importance.high,
+            priority: isSos ? Priority.max : Priority.high,
+          )),
+          payload: jsonEncode({'type': type}),
+        );
+      });
+      FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        _routeFromNotification(message.data['type'] as String?);
+      });
+    }
+  } catch (e) {
+    debugPrint('FCM register error: $e');
+  }
+}
+
+// ลบ FCM token ก่อนออกจากระบบ — best-effort เท่านั้น ห้าม throw กันไม่ให้ logout ค้าง
+Future<void> removeFcmTokenBeforeLogout() async {
+  try {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({'fcmTokens': FieldValue.arrayRemove([token])});
+    }
+    await FirebaseMessaging.instance.deleteToken();
+  } catch (e) {
+    debugPrint('removeFcmTokenBeforeLogout error: $e');
+  }
+}
+
+// ==========================================
 // AuthGate — role-based routing
 // ==========================================
 class AuthGate extends StatelessWidget {
@@ -164,7 +275,11 @@ class AuthGate extends StatelessWidget {
         if (authSnap.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
-        if (!authSnap.hasData) return const LoginScreen();
+        if (!authSnap.hasData) {
+          _fcmRegistered = false;
+          currentUserRole = null;
+          return const LoginScreen();
+        }
 
         // อ่าน role จาก Firestore
         return FutureBuilder<DocumentSnapshot>(
@@ -173,11 +288,33 @@ class AuthGate extends StatelessWidget {
             if (userSnap.connectionState == ConnectionState.waiting) {
               return const Scaffold(body: Center(child: CircularProgressIndicator()));
             }
+            String role = 'patient';
             if (userSnap.hasData && userSnap.data!.exists) {
-              String role = (userSnap.data!.data() as Map<String, dynamic>)['role'] ?? 'patient';
-              if (role == 'staff') return const StaffNavigation();
-              if (role == 'admin') return const AdminNavigation();
+              role = (userSnap.data!.data() as Map<String, dynamic>)['role'] ?? 'patient';
             }
+            currentUserRole = role;
+            final uid = authSnap.data!.uid;
+            if (!_fcmRegistered) {
+              WidgetsBinding.instance.addPostFrameCallback((_) => _registerFcm(uid));
+            }
+
+            // ปลายทางค้างจากการแตะแจ้งเตือนตอนแอปปิดอยู่ (getInitialMessage) — ใช้ครั้งเดียวแล้วเคลียร์ทิ้ง
+            if (pendingNotifType != null) {
+              final type = pendingNotifType;
+              pendingNotifType = null;
+              if (role == 'patient' && ['queue_called', 'morning_reminder', 'booking_cancelled'].contains(type)) {
+                return const MainNavigation(initialIndex: 1);
+              }
+              if (role == 'staff' && type == 'sos_new') {
+                return const StaffNavigation(initialIndex: 1);
+              }
+              if (role == 'staff' && ['booking_created', 'booking_cancelled'].contains(type)) {
+                return const StaffNavigation(initialIndex: 0);
+              }
+            }
+
+            if (role == 'staff') return const StaffNavigation();
+            if (role == 'admin') return const AdminNavigation();
             return const MainNavigation();
           },
         );
@@ -1273,7 +1410,27 @@ class HomeScreen extends StatelessWidget {
                     Row(children: [
                       Expanded(child: _serviceCard(context, 'กายภาพบำบัด', Icons.accessibility_new_rounded, false, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BookingScreen())))),
                       const SizedBox(width: 12),
-                      Expanded(child: _serviceCard(context, 'แจ้งเตือน', Icons.notifications_rounded, false, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())))),
+                      Expanded(child: Stack(clipBehavior: Clip.none, children: [
+                        _serviceCard(context, 'แจ้งเตือน', Icons.notifications_rounded, false, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen()))),
+                        Positioned(
+                          top: 8, right: 8,
+                          child: StreamBuilder<QuerySnapshot>(
+                            stream: FirebaseFirestore.instance.collection('notifications')
+                                .where('uid', isEqualTo: user?.uid)
+                                .where('read', isEqualTo: false)
+                                .limit(1)
+                                .snapshots(),
+                            builder: (context, unreadSnap) {
+                              final hasUnread = unreadSnap.data?.docs.isNotEmpty ?? false;
+                              if (!hasUnread) return const SizedBox.shrink();
+                              return Container(
+                                width: 12, height: 12,
+                                decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
+                              );
+                            },
+                          ),
+                        ),
+                      ])),
                       const SizedBox(width: 12),
                       Expanded(child: _serviceCard(context, 'แจ้งเหตุฉุกเฉิน', Icons.sos_rounded, true, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SOSScreen())))),
                     ]),
@@ -1301,7 +1458,7 @@ class HomeScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp()});
+              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
               if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
                 releaseQueueSlot(staffUid: staffUid, date: date, time: time);
               }
@@ -2154,7 +2311,7 @@ class ActiveQueueScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp()});
+              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
               if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
                 releaseQueueSlot(staffUid: staffUid, date: date, time: time);
               }
@@ -2376,6 +2533,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () async {
               Navigator.pop(ctx);
+              await removeFcmTokenBeforeLogout();
               await FirebaseAuth.instance.signOut();
               if (ctx.mounted) Navigator.pushAndRemoveUntil(ctx, MaterialPageRoute(builder: (_) => const AuthGate()), (r) => false);
             },
@@ -2457,11 +2615,107 @@ class _ProfileScreenState extends State<ProfileScreen> {
 // ==========================================
 class NotificationScreen extends StatelessWidget {
   const NotificationScreen({super.key});
+
+  // ไอคอน + สีต่อประเภทแจ้งเตือน
+  ({IconData icon, Color color}) _styleFor(String type) {
+    switch (type) {
+      case 'queue_called':
+        return (icon: Icons.campaign_rounded, color: primaryGreen);
+      case 'sos_new':
+        return (icon: Icons.sos_rounded, color: Colors.red);
+      case 'booking_created':
+        return (icon: Icons.event_available_rounded, color: primaryGreen);
+      case 'booking_cancelled':
+        return (icon: Icons.event_busy_rounded, color: Colors.orange);
+      case 'morning_reminder':
+        return (icon: Icons.alarm_rounded, color: Colors.amber.shade800);
+      default:
+        return (icon: Icons.notifications_rounded, color: Colors.grey);
+    }
+  }
+
+  // เวลาแบบสัมพัทธ์ (ภาษาไทย)
+  String _relativeTime(Timestamp? ts) {
+    if (ts == null) return '';
+    final diff = DateTime.now().difference(ts.toDate());
+    if (diff.inMinutes < 1) return 'เมื่อสักครู่';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} นาทีที่แล้ว';
+    if (diff.inHours < 24) return '${diff.inHours} ชั่วโมงที่แล้ว';
+    final d = ts.toDate();
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${(d.year % 100).toString().padLeft(2, '0')}';
+  }
+
+  Widget _card(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final type = (data['type'] ?? '').toString();
+    final title = (data['title'] ?? '').toString();
+    final body = (data['body'] ?? '').toString();
+    final read = data['read'] == true;
+    final s = _styleFor(type);
+    return GestureDetector(
+      onTap: read ? null : () => doc.reference.update({'read': true}).catchError((e) => debugPrint('mark notification read failed: $e')),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: kGapM),
+        padding: const EdgeInsets.all(kCardPadding),
+        decoration: BoxDecoration(
+          color: read ? Colors.white : lightGreen,
+          borderRadius: BorderRadius.circular(kRadius),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 14, offset: const Offset(0, 4))],
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: s.color.withValues(alpha: 0.12), shape: BoxShape.circle),
+            child: Icon(s.icon, color: s.color, size: 22),
+          ),
+          const SizedBox(width: kGapM),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              if (!read) Container(width: 8, height: 8, margin: const EdgeInsets.only(right: 6), decoration: const BoxDecoration(color: primaryGreen, shape: BoxShape.circle)),
+              Expanded(child: Text(title, style: tBody().copyWith(fontWeight: FontWeight.bold))),
+            ]),
+            const SizedBox(height: 4),
+            Text(body, style: tBody(textSecondary)),
+          ])),
+          const SizedBox(width: kGapS),
+          Text(_relativeTime(data['createdAt'] as Timestamp?), style: tCaption()),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('การแจ้งเตือน')),
-      body: const Center(child: Text('ฟีเจอร์แจ้งเตือนจะมาในเร็วๆ นี้', style: TextStyle(color: Colors.grey))),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('notifications').where('uid', isEqualTo: FirebaseAuth.instance.currentUser!.uid).snapshots(),
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator(color: primaryGreen));
+          }
+          if (snap.hasError) {
+            return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
+          }
+          var docs = (snap.data?.docs ?? []).toList()
+            ..sort((a, b) {
+              final ta = a['createdAt'] as Timestamp?;
+              final tb = b['createdAt'] as Timestamp?;
+              if (ta == null && tb == null) return 0;
+              if (ta == null) return 1;
+              if (tb == null) return -1;
+              return tb.compareTo(ta);
+            });
+          if (docs.isEmpty) {
+            return const StateMessage(icon: Icons.notifications_off_rounded, message: 'ยังไม่มีการแจ้งเตือน');
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.all(kGapL),
+            itemCount: docs.length,
+            itemBuilder: (_, i) => _card(docs[i]),
+          );
+        },
+      ),
     );
   }
 }
@@ -2547,14 +2801,21 @@ class _SOSScreenState extends State<SOSScreen> {
 // =======================================================================================
 
 class StaffNavigation extends StatefulWidget {
-  const StaffNavigation({super.key});
+  final int initialIndex;
+  const StaffNavigation({super.key, this.initialIndex = 0});
   @override
   State<StaffNavigation> createState() => _StaffNavigationState();
 }
 
 class _StaffNavigationState extends State<StaffNavigation> {
-  int index = 0;
+  late int index;
   final pages = [const StaffQueueScreen(), const StaffSOSScreen(), const StaffTreatmentHistoryScreen(), const StaffAvailabilityScreen(), const ProfileScreen()];
+
+  @override
+  void initState() {
+    super.initState();
+    index = widget.initialIndex;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2774,6 +3035,35 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                     Text('ติดตามสถานะแบบเรียลไทม์', style: GoogleFonts.notoSansThai(fontSize: 11, color: Colors.grey.shade400)),
                   ]),
                   const Spacer(),
+                  Stack(clipBehavior: Clip.none, children: [
+                    GestureDetector(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.notifications_rounded, color: primaryGreen, size: 20),
+                      ),
+                    ),
+                    Positioned(
+                      top: -2, right: -2,
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance.collection('notifications')
+                            .where('uid', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+                            .where('read', isEqualTo: false)
+                            .limit(1)
+                            .snapshots(),
+                        builder: (context, unreadSnap) {
+                          final hasUnread = unreadSnap.data?.docs.isNotEmpty ?? false;
+                          if (!hasUnread) return const SizedBox.shrink();
+                          return Container(
+                            width: 10, height: 10,
+                            decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
+                          );
+                        },
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(width: 10),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
@@ -3702,7 +3992,10 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerPr
                 ]),
                 const Spacer(),
                 GestureDetector(
-                  onTap: () => FirebaseAuth.instance.signOut(),
+                  onTap: () async {
+                    await removeFcmTokenBeforeLogout();
+                    await FirebaseAuth.instance.signOut();
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
