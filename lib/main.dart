@@ -15,6 +15,8 @@ import 'package:healthcare_app/services/appointment_service.dart';
 import 'package:healthcare_app/services/queue_slot_service.dart';
 import 'package:healthcare_app/services/availability_service.dart';
 import 'package:healthcare_app/services/sos_service.dart';
+import 'package:healthcare_app/services/user_service.dart';
+import 'package:healthcare_app/services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +32,8 @@ final QueueSlotService queueSlots = QueueSlotService();
 final AvailabilityService availability = AvailabilityService();
 final AppointmentService appointments = AppointmentService();
 final SosService sos = SosService();
+final UserService users = UserService();
+final NotificationService notifications = NotificationService();
 
 class HealthcareStation extends StatelessWidget {
   const HealthcareStation({super.key});
@@ -592,9 +596,8 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
     setState(() => loading = true);
     try {
       // ตรวจ invite code
-      DocumentSnapshot inviteDoc = await FirebaseFirestore.instance.collection('settings').doc('staff_invite').get();
-      if (!inviteDoc.exists) { _snack('ระบบ Invite Code ยังไม่ได้ตั้งค่า กรุณาติดต่อผู้ดูแลระบบ'); return; }
-      String correctCode = (inviteDoc.data() as Map<String, dynamic>)['invite_code'] ?? '';
+      String? correctCode = await users.fetchStaffInviteCode();
+      if (correctCode == null) { _snack('ระบบ Invite Code ยังไม่ได้ตั้งค่า กรุณาติดต่อผู้ดูแลระบบ'); return; }
       if (inviteCtrl.text.trim() != correctCode) { _snack('Invite Code ไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ'); return; }
 
       // สร้างบัญชี
@@ -912,7 +915,7 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xffF5FAF6),
       body: FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance.collection('users').doc(user?.uid).get(),
+        future: users.getUser(user?.uid),
         builder: (context, snap) {
           if (snap.hasError) {
             return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
@@ -1090,11 +1093,7 @@ class HomeScreen extends StatelessWidget {
                         Positioned(
                           top: 8, right: 8,
                           child: StreamBuilder<QuerySnapshot>(
-                            stream: FirebaseFirestore.instance.collection('notifications')
-                                .where('uid', isEqualTo: user?.uid)
-                                .where('read', isEqualTo: false)
-                                .limit(1)
-                                .snapshots(),
+                            stream: notifications.unreadProbe(user?.uid),
                             builder: (context, unreadSnap) {
                               final hasUnread = unreadSnap.data?.docs.isNotEmpty ?? false;
                               if (!hasUnread) return const SizedBox.shrink();
@@ -1272,8 +1271,8 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _loadStaff() async {
     setState(() => loadingStaff = true);
     try {
-      var snap = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'staff').get();
-      if (mounted) setState(() { staffList = snap.docs.map((d) => d.data()).toList(); loadingStaff = false; });
+      var staffData = await users.staffUsers();
+      if (mounted) setState(() { staffList = staffData; loadingStaff = false; });
     } catch (_) {
       if (mounted) setState(() => loadingStaff = false);
     }
@@ -2110,7 +2109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final bytes = await File(picked.path).readAsBytes();
       final base64Str = base64Encode(bytes);
       final uid = FirebaseAuth.instance.currentUser!.uid;
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({'photoBase64': base64Str});
+      await users.updatePhotoBase64(uid: uid, photoBase64: base64Str);
       if (mounted) setState(() {});
     } catch (e) {
       debugPrint('Photo upload error: $e');
@@ -2149,7 +2148,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('โปรไฟล์ของฉัน'), automaticallyImplyLeading: false),
       body: FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance.collection('users').doc(user?.uid).get(),
+        future: users.getUser(user?.uid),
         builder: (context, snap) {
           String name = 'กำลังโหลด...';
           String role = 'patient';
@@ -2252,7 +2251,7 @@ class NotificationScreen extends StatelessWidget {
     final read = data['read'] == true;
     final s = _styleFor(type);
     return GestureDetector(
-      onTap: read ? null : () => doc.reference.update({'read': true}).catchError((e) => debugPrint('mark notification read failed: $e')),
+      onTap: read ? null : () => notifications.markRead(doc.reference).catchError((e) => debugPrint('mark notification read failed: $e')),
       child: Container(
         margin: const EdgeInsets.only(bottom: kGapM),
         padding: const EdgeInsets.all(kCardPadding),
@@ -2288,7 +2287,7 @@ class NotificationScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('การแจ้งเตือน')),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('notifications').where('uid', isEqualTo: FirebaseAuth.instance.currentUser?.uid).snapshots(),
+        stream: notifications.forUser(FirebaseAuth.instance.currentUser?.uid),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: primaryGreen));
@@ -2340,7 +2339,7 @@ class _SOSScreenState extends State<SOSScreen> {
     setState(() => isSending = true);
     User? user = FirebaseAuth.instance.currentUser;
     try {
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
+      var userDoc = await users.getUser(user!.uid);
       String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
       await sos.sendAlert(patientUid: user.uid, patientName: patientName, issue: message);
       if (mounted) {
@@ -2645,11 +2644,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                     Positioned(
                       top: -2, right: -2,
                       child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance.collection('notifications')
-                            .where('uid', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
-                            .where('read', isEqualTo: false)
-                            .limit(1)
-                            .snapshots(),
+                        stream: notifications.unreadProbe(FirebaseAuth.instance.currentUser?.uid),
                         builder: (context, unreadSnap) {
                           final hasUnread = unreadSnap.data?.docs.isNotEmpty ?? false;
                           if (!hasUnread) return const SizedBox.shrink();
@@ -3551,15 +3546,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerPr
     );
     if (confirm != true) return;
     try {
-      final batch = FirebaseFirestore.instance.batch();
-      batch.delete(FirebaseFirestore.instance.collection('users').doc(uid));
-      final appts = await FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: uid).get();
-      for (var d in appts.docs) { batch.delete(d.reference); }
-      final apptsSt = await FirebaseFirestore.instance.collection('appointments').where('staffUid', isEqualTo: uid).get();
-      for (var d in apptsSt.docs) { batch.delete(d.reference); }
-      final avail = await FirebaseFirestore.instance.collection('staff_availability').where('staffUid', isEqualTo: uid).get();
-      for (var d in avail.docs) { batch.delete(d.reference); }
-      await batch.commit();
+      await users.deleteUserCascade(uid);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ลบบัญชี "$name" เรียบร้อยแล้ว'), backgroundColor: primaryGreen));
     } catch (e) {
       debugPrint('Delete account error: $e');
@@ -3642,7 +3629,7 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerPr
   }
 
   Widget _userList(String role) => StreamBuilder<QuerySnapshot>(
-    stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: role).snapshots(),
+    stream: users.usersByRole(role),
     builder: (ctx, snap) {
       if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
       final docs = (snap.data?.docs ?? []).where((d) {
