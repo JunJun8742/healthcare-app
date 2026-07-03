@@ -10,6 +10,9 @@
       "mcp__visualize__read_me",
       "mcp__visualize__show_widget",
       "Bash(gh auth *)"
+    ],
+    "additionalDirectories": [
+      "E:\\Obsidian\\Project\\healthcare_station_app"
     ]
   }
 }
