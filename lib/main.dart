@@ -11,6 +11,7 @@ import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/widgets.dart';
 import 'package:healthcare_app/services/fcm_service.dart';
+import 'package:healthcare_app/services/appointment_service.dart';
 import 'package:healthcare_app/services/queue_slot_service.dart';
 import 'package:healthcare_app/services/availability_service.dart';
 
@@ -26,6 +27,7 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 final QueueSlotService queueSlots = QueueSlotService();
 final AvailabilityService availability = AvailabilityService();
+final AppointmentService appointments = AppointmentService();
 
 class HealthcareStation extends StatelessWidget {
   const HealthcareStation({super.key});
@@ -966,7 +968,7 @@ class HomeScreen extends StatelessWidget {
 
                     // ===== Queue Card =====
                     StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user?.uid).snapshots(),
+                      stream: appointments.patientAppointments(user?.uid),
                       builder: (context, snap) {
                         if (snap.hasError) {
                           return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
@@ -1130,7 +1132,7 @@ class HomeScreen extends StatelessWidget {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
+                await appointments.cancelByPatient(docId);
                 if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
                   queueSlots.release(staffUid: staffUid, date: date, time: time);
                 }
@@ -1228,12 +1230,6 @@ class BookingScreen extends StatefulWidget {
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  // Sentinel returned by submitBooking's pre-check when the patient already
-  // has an active queue: the orange snackbar already explains the failure,
-  // so the confirm sheet must not also show its own in-sheet error on top
-  // of it. `null` still means a real failure (show the in-sheet error).
-  static const String _kActiveQueue = '__ACTIVE_QUEUE__';
-
   int selectedDateIndex = 0;
   int selectedStaffIndex = 0;
   int selectedTimeIndex = 0;
@@ -1299,71 +1295,26 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
-  Future<String?> submitBooking() async {
+  Future<BookingOutcome> submitBooking() async {
     try {
       setState(() => isSubmitting = true);
       User? user = FirebaseAuth.instance.currentUser;
-      var existing = await FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user!.uid).where('status', whereIn: ['กำลังรอ', 'เรียกคิว', 'กำลังรักษา']).get();
-      if (existing.docs.isNotEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คุณมีคิวที่ยังไม่เสร็จสิ้นอยู่แล้ว'), backgroundColor: Colors.orange));
-        return _kActiveQueue;
+      final outcome = await appointments.createBooking(
+        patientUid: user!.uid,
+        doctor: staffList.isNotEmpty ? (staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ') : 'นักกายภาพ',
+        staffUid: staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '',
+        date: _fmt(upcomingDays[selectedDateIndex]),
+        time: availableTimes[selectedTimeIndex],
+        machineId: selectedMachineId ?? '',
+        machineName: selectedMachineName,
+      );
+      // Snackbar อธิบายเหตุจองไม่ได้เพราะมีคิวค้าง — sheet จะปิดตัวเฉย ๆ ไม่ซ้อน error
+      if (outcome is BookingBlockedByActiveQueue && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('คุณมีคิวที่ยังไม่เสร็จสิ้นอยู่แล้ว'), backgroundColor: Colors.orange));
       }
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
-      String dateStr = _fmt(upcomingDays[selectedDateIndex]);
-      // '/' is illegal in a Firestore document-ID path segment (dateStr is
-      // Thai Buddhist dd/MM/yyyy); sanitize consistently for both doc IDs.
-      String dateKey = dateStr.replaceAll('/', '-');
-      String staffUid = staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '';
-      String time = availableTimes[selectedTimeIndex];
-      // queueNo is a single shared queue board across all staff (StaffQueueScreen),
-      // so the counter must be keyed per-day only, not per-staff.
-      DocumentReference<Map<String, dynamic>> dayCounterRef =
-          FirebaseFirestore.instance.collection('queue_days').doc(dateKey);
-      // Slot lock stays per-staff so two different staff can share a time slot.
-      DocumentReference<Map<String, dynamic>> slotRef =
-          FirebaseFirestore.instance.collection('queue_slots').doc('${staffUid}_$dateKey');
-      DocumentReference<Map<String, dynamic>> apptRef =
-          FirebaseFirestore.instance.collection('appointments').doc();
-
-      String? assignedQueueNo;
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
-        DocumentSnapshot<Map<String, dynamic>> daySnap = await transaction.get(dayCounterRef);
-        DocumentSnapshot<Map<String, dynamic>> slotSnap = await transaction.get(slotRef);
-        Map<String, dynamic>? dayData = daySnap.data();
-        Map<String, dynamic>? slotData = slotSnap.data();
-        Map<String, dynamic> bookedTimes = Map<String, dynamic>.from(slotData?['bookedTimes'] ?? {});
-        if (bookedTimes[time] != null && bookedTimes[time] != false) {
-          throw Exception('ช่วงเวลานี้เพิ่งถูกจองไปแล้ว กรุณาเลือกเวลาอื่น');
-        }
-        int nextNum = (dayData?['count'] ?? 0) + 1;
-        String qNo = nextNum.toString().padLeft(3, '0');
-        assignedQueueNo = qNo;
-
-        transaction.set(dayCounterRef, {
-          'date': dateStr,
-          'count': nextNum,
-        });
-
-        bookedTimes[time] = apptRef.id;
-        transaction.set(slotRef, {
-          'staffUid': staffUid,
-          'date': dateStr,
-          'bookedTimes': bookedTimes,
-        });
-
-        transaction.set(apptRef, {
-          'patientUid': user.uid, 'patientName': patientName, 'queueNo': qNo,
-          'doctor': staffList.isNotEmpty ? (staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ') : 'นักกายภาพ',
-          'staffUid': staffUid,
-          'date': dateStr, 'time': time,
-          'status': 'กำลังรอ', 'notes': '', 'machineId': selectedMachineId ?? '', 'machineName': selectedMachineName, 'createdAt': FieldValue.serverTimestamp(),
-        });
-      });
-
-      return assignedQueueNo;
+      return outcome;
     } catch (e) {
-      return null;
+      return const BookingFailed();
     } finally {
       if (mounted) setState(() => isSubmitting = false);
     }
@@ -1410,17 +1361,17 @@ class _BookingScreenState extends State<BookingScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius))),
                 onPressed: submitting ? null : () async {
                   setSheet(() { submitting = true; error = null; });
-                  final qNo = await submitBooking();
+                  final outcome = await submitBooking();
                   if (!sheetCtx.mounted) return;
-                  if (qNo == _kActiveQueue) {
+                  if (outcome is BookingBlockedByActiveQueue) {
                     // Orange snackbar (shown by submitBooking) already explains
                     // this outcome — just close the sheet, no in-sheet error.
                     Navigator.pop(sheetCtx);
-                  } else if (qNo != null) {
+                  } else if (outcome is BookingSuccess) {
                     Navigator.pop(sheetCtx);
                     if (mounted) {
                       Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => BookingSuccessScreen(
-                        queueNo: qNo,
+                        queueNo: outcome.queueNo,
                         doctor: staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ',
                         date: _fmt(upcomingDays[selectedDateIndex]),
                         time: availableTimes[selectedTimeIndex],
@@ -1813,7 +1764,7 @@ class ActiveQueueScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xffF5FAF6),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user?.uid).snapshots(),
+        stream: appointments.patientAppointments(user?.uid),
         builder: (context, snap) {
           if (snap.hasError) {
             return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
@@ -1952,7 +1903,7 @@ class ActiveQueueScreen extends StatelessWidget {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
+                await appointments.cancelByPatient(docId);
                 if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
                   queueSlots.release(staffUid: staffUid, date: date, time: time);
                 }
@@ -2062,7 +2013,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('ประวัติการรักษา')),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('appointments').where('patientUid', isEqualTo: user?.uid).snapshots(),
+        stream: appointments.patientAppointments(user?.uid),
         builder: (context, snap) {
           if (snap.hasError) {
             return const StateMessage(icon: Icons.wifi_off_rounded, message: 'โหลดข้อมูลไม่สำเร็จ ลองอีกครั้ง');
@@ -2552,7 +2503,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
       ),
     );
     if (ok != true) return;
-    await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': toStatus, 'updatedAt': FieldValue.serverTimestamp(), ...extra});
+    await appointments.updateStatus(docId, toStatus: toStatus, extra: extra);
     if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
       queueSlots.release(staffUid: staffUid, date: date, time: time);
     }
@@ -2567,8 +2518,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
               // Guard: only revert if the doc's status is still what we just
               // set it to — otherwise a concurrent status change happened and
               // undo must not clobber it.
-              final apptRef = FirebaseFirestore.instance.collection('appointments').doc(docId);
-              final cur = await apptRef.get();
+              final cur = await appointments.getAppointment(docId);
               if (!cur.exists || cur.data()?['status'] != toStatus) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2582,7 +2532,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
               for (final k in extra.keys) {
                 revertMap[k] = prevValues.containsKey(k) ? prevValues[k] : FieldValue.delete();
               }
-              await apptRef.update(revertMap);
+              await appointments.updateFields(docId, revertMap);
               if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
                 queueSlots.relock(staffUid: staffUid, date: date, time: time, apptId: docId);
               }
@@ -2642,7 +2592,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
       body: SafeArea(
         bottom: false,
         child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('appointments').where('date', isEqualTo: _fmtDate(selectedDay)).snapshots(),
+        stream: appointments.appointmentsForDate(_fmtDate(selectedDay)),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
           // allDocs: non-terminal (excludes เสร็จสิ้น/ยกเลิก) — drives header stats
@@ -3250,7 +3200,7 @@ class _StaffTreatmentHistoryScreenState extends State<StaffTreatmentHistoryScree
         const Divider(height: 1),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('appointments').snapshots(),
+            stream: appointments.allAppointments(),
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xff00897b)));
               if (!snap.hasData || snap.data!.docs.isEmpty) {
