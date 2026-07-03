@@ -9,6 +9,8 @@ import 'dart:io';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:healthcare_app/core/theme.dart';
+import 'package:healthcare_app/core/status.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,14 +37,6 @@ Future<void> main() async {
   runApp(const HealthcareStation());
 }
 
-// ==========================================
-// Theme & Colors
-// ==========================================
-const Color primaryGreen = Color(0xff186B44);
-const Color lightGreen = Color(0xffE6F4EA);
-const Color bgWhite = Color(0xffF7FCF9);
-const Color textDark = Color(0xff2D312F);
-
 // ===== Push notifications: navigation + FCM registration state =====
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
@@ -50,37 +44,6 @@ String? pendingNotifType; // ประเภทแจ้งเตือนที
 String? currentUserRole;
 bool _fcmRegistered = false;
 bool _fcmListenersAttached = false;
-
-// ===== Design tokens =====
-const double kRadius = 16;
-const double kCardPadding = 16;
-const double kGapS = 8;
-const double kGapM = 12;
-const double kGapL = 16;
-const double kGapXL = 24;
-const Color textSecondary = Color(0xa62d312f); // textDark @ 65%
-
-TextStyle tTitle([Color? c]) => GoogleFonts.notoSansThai(fontSize: 18, fontWeight: FontWeight.bold, color: c ?? textDark);
-TextStyle tBody([Color? c]) => GoogleFonts.notoSansThai(fontSize: 15, color: c ?? textDark);
-TextStyle tCaption([Color? c]) => GoogleFonts.notoSansThai(fontSize: 14, color: c ?? textSecondary);
-
-// ===== สถานะคิว: สี/ไอคอน/ป้ายชื่อ ใช้ร่วมกันทุกหน้า =====
-({Color color, IconData icon, String label}) statusInfo(String status) {
-  switch (status) {
-    case 'กำลังรอ':
-      return (color: const Color(0xffB7791F), icon: Icons.hourglass_top_rounded, label: 'กำลังรอ');
-    case 'เรียกคิว':
-      return (color: const Color(0xff1D4ED8), icon: Icons.campaign_rounded, label: 'เรียกคิว');
-    case 'กำลังรักษา':
-      return (color: primaryGreen, icon: Icons.healing_rounded, label: 'กำลังรักษา');
-    case 'เสร็จสิ้น':
-      return (color: const Color(0xff4B6358), icon: Icons.check_circle_rounded, label: 'เสร็จสิ้น');
-    case 'ยกเลิก':
-      return (color: const Color(0xffB91C1C), icon: Icons.cancel_rounded, label: 'ยกเลิก');
-    default:
-      return (color: textSecondary, icon: Icons.help_outline_rounded, label: status);
-  }
-}
 
 // ===== queue_slots release/re-lock helpers (shared by patient cancel & staff
 // status changes) — see firestore.rules queue_slots for the write invariants.
