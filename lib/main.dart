@@ -461,7 +461,7 @@ class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderState
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _anim,
-      builder: (_, __) => Container(
+      builder: (_, _) => Container(
         width: 10, height: 10,
         decoration: BoxDecoration(
           color: widget.color.withValues(alpha: _anim.value),
@@ -3518,11 +3518,13 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
     stream: FirebaseFirestore.instance.collection('sos_alerts').where('status', isEqualTo: 'รับเรื่องแล้ว').snapshots(),
     builder: (ctx, snap) {
       if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
-      if (!snap.hasData || snap.data!.docs.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.history_toggle_off_rounded, size: 72, color: Colors.grey.shade300),
-        const SizedBox(height: 14),
-        Text('ยังไม่มีประวัติ SOS', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 16)),
-      ]));
+      if (!snap.hasData || snap.data!.docs.isEmpty) {
+        return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.history_toggle_off_rounded, size: 72, color: Colors.grey.shade300),
+          const SizedBox(height: 14),
+          Text('ยังไม่มีประวัติ SOS', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 16)),
+        ]));
+      }
       var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
       return ListView.builder(padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), itemCount: docs.length, itemBuilder: (_, i) {
         var data = docs[i].data() as Map<String, dynamic>;
@@ -3617,18 +3619,22 @@ class _StaffTreatmentHistoryScreenState extends State<StaffTreatmentHistoryScree
             stream: FirebaseFirestore.instance.collection('appointments').snapshots(),
             builder: (context, snap) {
               if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xff00897b)));
-              if (!snap.hasData || snap.data!.docs.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.history_rounded, size: 80, color: Colors.grey.shade300),
-                const SizedBox(height: 12),
-                Text('ยังไม่มีประวัติ', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 16)),
-              ]));
+              if (!snap.hasData || snap.data!.docs.isEmpty) {
+                return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.history_rounded, size: 80, color: Colors.grey.shade300),
+                  const SizedBox(height: 12),
+                  Text('ยังไม่มีประวัติ', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 16)),
+                ]));
+              }
               var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
               if (filterDate != null) docs = docs.where((d) => (d.data() as Map)['date'] == filterDate).toList();
-              if (docs.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.search_off_rounded, size: 72, color: Colors.grey.shade300),
-                const SizedBox(height: 12),
-                Text('ไม่พบประวัติวันที่ $filterDate', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 15)),
-              ]));
+              if (docs.isEmpty) {
+                return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.search_off_rounded, size: 72, color: Colors.grey.shade300),
+                  const SizedBox(height: 12),
+                  Text('ไม่พบประวัติวันที่ $filterDate', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 15)),
+                ]));
+              }
               return ListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 20, 16, 30),
                 itemCount: docs.length,
@@ -4061,11 +4067,13 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerPr
         final email = ((d.data() as Map)['email'] ?? '').toString().toLowerCase();
         return _search.isEmpty || name.contains(_search) || email.contains(_search);
       }).toList();
-      if (docs.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.person_off_rounded, color: Colors.grey.shade300, size: 56),
-        const SizedBox(height: 12),
-        Text('ไม่พบผู้ใช้', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 15)),
-      ]));
+      if (docs.isEmpty) {
+        return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.person_off_rounded, color: Colors.grey.shade300, size: 56),
+          const SizedBox(height: 12),
+          Text('ไม่พบผู้ใช้', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 15)),
+        ]));
+      }
       return ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         itemCount: docs.length,
