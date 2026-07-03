@@ -1458,11 +1458,17 @@ class HomeScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
-              if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
-                releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+              try {
+                await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
+                if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+                  releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+                }
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
+              } catch (e) {
+                // กติกาความปลอดภัยยอมให้ยกเลิกเฉพาะคิวที่ยัง 'กำลังรอ' — ถ้าเจ้าหน้าที่เรียกคิวตัดหน้าไปแล้ว การยกเลิกจะถูกปฏิเสธ
+                debugPrint('cancel appointment failed: $e');
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวไม่สำเร็จ คิวอาจถูกเรียกไปแล้ว กรุณาลองใหม่'), backgroundColor: Colors.orange));
               }
-              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
             },
             child: const Text('ยืนยันยกเลิก'),
           ),
@@ -2311,11 +2317,17 @@ class ActiveQueueScreen extends StatelessWidget {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () async {
               Navigator.pop(context);
-              await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
-              if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
-                releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+              try {
+                await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
+                if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+                  releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+                }
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
+              } catch (e) {
+                // กติกาความปลอดภัยยอมให้ยกเลิกเฉพาะคิวที่ยัง 'กำลังรอ' — ถ้าเจ้าหน้าที่เรียกคิวตัดหน้าไปแล้ว การยกเลิกจะถูกปฏิเสธ
+                debugPrint('cancel appointment failed: $e');
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวไม่สำเร็จ คิวอาจถูกเรียกไปแล้ว กรุณาลองใหม่'), backgroundColor: Colors.orange));
               }
-              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
             },
             child: const Text('ยืนยันยกเลิก'),
           ),
@@ -2689,7 +2701,7 @@ class NotificationScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('การแจ้งเตือน')),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('notifications').where('uid', isEqualTo: FirebaseAuth.instance.currentUser!.uid).snapshots(),
+        stream: FirebaseFirestore.instance.collection('notifications').where('uid', isEqualTo: FirebaseAuth.instance.currentUser?.uid).snapshots(),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator(color: primaryGreen));
