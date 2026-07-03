@@ -11,6 +11,8 @@ import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/widgets.dart';
 import 'package:healthcare_app/services/fcm_service.dart';
+import 'package:healthcare_app/services/queue_slot_service.dart';
+import 'package:healthcare_app/services/availability_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,29 +24,8 @@ Future<void> main() async {
 // ===== Navigator key เดียวของแอป — ใช้โดย MaterialApp และการนำทางจากแจ้งเตือน =====
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
-// ===== queue_slots release/re-lock helpers (shared by patient cancel & staff
-// status changes) — see firestore.rules queue_slots for the write invariants.
-// Failure here must never break the caller's cancel/undo UX, so both are
-// fire-and-forget with a debugPrint on error.
-Future<void> releaseQueueSlot({required String staffUid, required String date, required String time}) async {
-  try {
-    String dateKey = date.replaceAll('/', '-');
-    await FirebaseFirestore.instance.collection('queue_slots').doc('${staffUid}_$dateKey')
-        .update({'bookedTimes.$time': false});
-  } catch (e) {
-    debugPrint('releaseQueueSlot failed: $e');
-  }
-}
-
-Future<void> relockQueueSlot({required String staffUid, required String date, required String time, required String apptId}) async {
-  try {
-    String dateKey = date.replaceAll('/', '-');
-    await FirebaseFirestore.instance.collection('queue_slots').doc('${staffUid}_$dateKey')
-        .update({'bookedTimes.$time': apptId});
-  } catch (e) {
-    debugPrint('relockQueueSlot failed: $e');
-  }
-}
+final QueueSlotService queueSlots = QueueSlotService();
+final AvailabilityService availability = AvailabilityService();
 
 class HealthcareStation extends StatelessWidget {
   const HealthcareStation({super.key});
@@ -1151,7 +1132,7 @@ class HomeScreen extends StatelessWidget {
               try {
                 await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
                 if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
-                  releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+                  queueSlots.release(staffUid: staffUid, date: date, time: time);
                 }
                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
               } catch (e) {
@@ -1309,21 +1290,8 @@ class _BookingScreenState extends State<BookingScreen> {
     String dateStr = _fmt(upcomingDays[selectedDateIndex]);
     try {
       String staffUid = staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '';
-      String docId = '${staffUid}_$dateStr';
-      var docSnap = await FirebaseFirestore.instance.collection('staff_availability').doc(docId).get();
-      List<String> times = [];
-      if (docSnap.exists) {
-        final raw = docSnap.data()?['times'];
-        if (raw is List && raw.isNotEmpty) times = List<String>.from(raw);
-      }
-      // Patients cannot read other patients' appointments (see firestore.rules),
-      // so booked/free status is derived from the queue_slots lock doc instead
-      // of scanning appointments. A time is booked iff its value exists and is
-      // not `false` (values are appointment-doc-id strings while booked).
-      String dateKey = dateStr.replaceAll('/', '-');
-      String slotDocId = '${staffUid}_$dateKey';
-      var slotSnap = await FirebaseFirestore.instance.collection('queue_slots').doc(slotDocId).get();
-      Map<String, dynamic> bookedTimesMap = slotSnap.data()?['bookedTimes'] ?? {};
+      List<String> times = await availability.openTimes(staffUid: staffUid, date: dateStr);
+      Map<String, dynamic> bookedTimesMap = await availability.bookedTimes(staffUid: staffUid, date: dateStr);
       List<String> freeTimes = times.where((t) => bookedTimesMap[t] == null || bookedTimesMap[t] == false).toList();
       if (mounted) setState(() { availableTimes = freeTimes; selectedTimeIndex = 0; loadingTimes = false; });
     } catch (_) {
@@ -1986,7 +1954,7 @@ class ActiveQueueScreen extends StatelessWidget {
               try {
                 await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
                 if (staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
-                  releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+                  queueSlots.release(staffUid: staffUid, date: date, time: time);
                 }
                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ยกเลิกคิวเรียบร้อยแล้ว'), backgroundColor: Colors.red));
               } catch (e) {
@@ -2586,7 +2554,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     if (ok != true) return;
     await FirebaseFirestore.instance.collection('appointments').doc(docId).update({'status': toStatus, 'updatedAt': FieldValue.serverTimestamp(), ...extra});
     if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
-      releaseQueueSlot(staffUid: staffUid, date: date, time: time);
+      queueSlots.release(staffUid: staffUid, date: date, time: time);
     }
     if (!context.mounted) return;
     final undoable = toStatus == 'ยกเลิก' || toStatus == 'เสร็จสิ้น';
@@ -2616,7 +2584,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
               }
               await apptRef.update(revertMap);
               if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
-                relockQueueSlot(staffUid: staffUid, date: date, time: time, apptId: docId);
+                queueSlots.relock(staffUid: staffUid, date: date, time: time, apptId: docId);
               }
             })
           : null,
@@ -3389,16 +3357,13 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
   }
 
   String _fmt(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year + 543}';
-  String _docId() => '${FirebaseAuth.instance.currentUser?.uid ?? 'staff'}_${_fmt(upcomingDays[selectedDateIndex])}';
 
   Future<void> _load() async {
     setState(() { isLoading = true; selectedTimes = {}; isLocked = false; });
     try {
-      var docSnap = await FirebaseFirestore.instance.collection('staff_availability').doc(_docId()).get();
-      if (docSnap.exists && mounted) {
-        final raw = docSnap.data()?['times'];
-        if (raw is List) setState(() { selectedTimes = Set<String>.from(raw.map((e) => e.toString())); isLocked = true; });
-      }
+      String staffUid = FirebaseAuth.instance.currentUser?.uid ?? 'staff';
+      Set<String>? times = await availability.staffTimes(staffUid: staffUid, date: _fmt(upcomingDays[selectedDateIndex]));
+      if (times != null && mounted) setState(() { selectedTimes = times; isLocked = true; });
     } catch (_) {}
     if (mounted) setState(() => isLoading = false);
   }
@@ -3413,7 +3378,7 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
         int bMin = int.parse(bP[0]) * 60 + int.parse(bP[1]);
         return aMin.compareTo(bMin);
       });
-      await FirebaseFirestore.instance.collection('staff_availability').doc(_docId()).set({'staffUid': FirebaseAuth.instance.currentUser?.uid ?? '', 'date': dateStr, 'times': sorted, 'updatedAt': FieldValue.serverTimestamp()});
+      await availability.saveTimes(staffUid: FirebaseAuth.instance.currentUser?.uid ?? '', date: dateStr, times: sorted);
       if (mounted) { setState(() => isLocked = true); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกเวลาว่างสำหรับ $dateStr แล้ว'), backgroundColor: Colors.green)); }
     } catch (e) {
       debugPrint('Save availability error: $e');
