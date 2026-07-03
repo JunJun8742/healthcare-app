@@ -2,8 +2,6 @@
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:google_fonts/google_fonts.dart';
@@ -12,39 +10,17 @@ import 'package:image_picker/image_picker.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/widgets.dart';
+import 'package:healthcare_app/services/fcm_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  try {
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    await localNotifications.initialize(
-      settings: const InitializationSettings(android: androidInit),
-      onDidReceiveNotificationResponse: (resp) {
-        try {
-          final data = jsonDecode(resp.payload ?? '{}') as Map<String, dynamic>;
-          _routeFromNotification(data['type'] as String?);
-        } catch (_) {}
-      },
-    );
-    final androidPlugin = localNotifications.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    await androidPlugin?.createNotificationChannel(const AndroidNotificationChannel('healthcare_default', 'การแจ้งเตือนทั่วไป', importance: Importance.high));
-    await androidPlugin?.createNotificationChannel(const AndroidNotificationChannel('sos_channel', 'แจ้งเตือนฉุกเฉิน SOS', importance: Importance.max));
-    final initialMsg = await FirebaseMessaging.instance.getInitialMessage();
-    pendingNotifType = initialMsg?.data['type'] as String?;
-  } catch (e) {
-    debugPrint('Notification init error: $e');
-  }
+  await initFcmBootstrap(onNotificationTap: routeFromNotification);
   runApp(const HealthcareStation());
 }
 
-// ===== Push notifications: navigation + FCM registration state =====
+// ===== Navigator key เดียวของแอป — ใช้โดย MaterialApp และการนำทางจากแจ้งเตือน =====
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
-final FlutterLocalNotificationsPlugin localNotifications = FlutterLocalNotificationsPlugin();
-String? pendingNotifType; // ประเภทแจ้งเตือนที่แตะจากสถานะปิดแอป — ใช้ครั้งเดียวตอน AuthGate สร้างหน้าแรก
-String? currentUserRole;
-bool _fcmRegistered = false;
-bool _fcmListenersAttached = false;
 
 // ===== queue_slots release/re-lock helpers (shared by patient cancel & staff
 // status changes) — see firestore.rules queue_slots for the write invariants.
@@ -111,84 +87,18 @@ class HealthcareStation extends StatelessWidget {
 }
 
 // ==========================================
-// Push notifications: tap routing + FCM token lifecycle
+// Push notifications: tap routing (ฝั่ง widget)
 // ==========================================
-// กำหนดปลายทางที่จะเปิดเมื่อผู้ใช้แตะแจ้งเตือน ตามบทบาทผู้ใช้ + ประเภทแจ้งเตือน
-void _routeFromNotification(String? type) {
-  if (type == null) return;
-  const patientTargets = {'queue_called', 'morning_reminder', 'booking_cancelled'};
-  const staffQueueTargets = {'booking_created', 'booking_cancelled'};
-  Widget root;
-  if (currentUserRole == 'patient' && patientTargets.contains(type)) {
-    root = const MainNavigation(initialIndex: 1);
-  } else if (currentUserRole == 'staff' && type == 'sos_new') {
-    root = const StaffNavigation(initialIndex: 1);
-  } else if (currentUserRole == 'staff' && staffQueueTargets.contains(type)) {
-    root = const StaffNavigation(initialIndex: 0);
-  } else {
-    return;
-  }
+// แปลงปลายทางจากตารางตัดสินใจใน fcm_service เป็นหน้าจอจริง แล้วนำทางผ่าน appNavigatorKey
+void routeFromNotification(String? type) {
+  final dest = notificationDestination(role: currentUserRole, type: type);
+  if (dest == null) return;
+  final Widget root = switch (dest) {
+    NotifDestination.patientQueue => const MainNavigation(initialIndex: 1),
+    NotifDestination.staffSos => const StaffNavigation(initialIndex: 1),
+    NotifDestination.staffQueue => const StaffNavigation(initialIndex: 0),
+  };
   appNavigatorKey.currentState?.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => root), (r) => false);
-}
-
-// ลงทะเบียน FCM token ให้ users/{uid}.fcmTokens — เรียกครั้งเดียวต่อ session (กันซ้ำด้วย _fcmRegistered)
-// ห้าม throw ออกไปนอกฟังก์ชันนี้เด็ดขาด: บน emulator ที่ไม่มี Play Services การขอ token จะ error
-// ซึ่งต้องไม่ทำให้แอปเปิดไม่ได้
-Future<void> _registerFcm(String uid) async {
-  _fcmRegistered = true;
-  try {
-    await FirebaseMessaging.instance.requestPermission();
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({'fcmTokens': FieldValue.arrayUnion([token])}, SetOptions(merge: true));
-    }
-    if (!_fcmListenersAttached) {
-      _fcmListenersAttached = true;
-      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-        final currentUid = FirebaseAuth.instance.currentUser?.uid;
-        if (currentUid == null) return;
-        FirebaseFirestore.instance.collection('users').doc(currentUid).set({'fcmTokens': FieldValue.arrayUnion([newToken])}, SetOptions(merge: true));
-      });
-      FirebaseMessaging.onMessage.listen((message) {
-        final notification = message.notification;
-        if (notification == null) return;
-        final type = message.data['type'];
-        final isSos = type == 'sos_new';
-        localNotifications.show(
-          id: message.hashCode,
-          title: notification.title,
-          body: notification.body,
-          notificationDetails: NotificationDetails(android: AndroidNotificationDetails(
-            isSos ? 'sos_channel' : 'healthcare_default',
-            isSos ? 'แจ้งเตือนฉุกเฉิน SOS' : 'การแจ้งเตือนทั่วไป',
-            importance: isSos ? Importance.max : Importance.high,
-            priority: isSos ? Priority.max : Priority.high,
-          )),
-          payload: jsonEncode({'type': type}),
-        );
-      });
-      FirebaseMessaging.onMessageOpenedApp.listen((message) {
-        _routeFromNotification(message.data['type'] as String?);
-      });
-    }
-  } catch (e) {
-    debugPrint('FCM register error: $e');
-  }
-}
-
-// ลบ FCM token ก่อนออกจากระบบ — best-effort เท่านั้น ห้าม throw กันไม่ให้ logout ค้าง
-Future<void> removeFcmTokenBeforeLogout() async {
-  try {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
-    final token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({'fcmTokens': FieldValue.arrayRemove([token])});
-    }
-    await FirebaseMessaging.instance.deleteToken();
-  } catch (e) {
-    debugPrint('removeFcmTokenBeforeLogout error: $e');
-  }
 }
 
 // ==========================================
@@ -206,7 +116,7 @@ class AuthGate extends StatelessWidget {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
         if (!authSnap.hasData) {
-          _fcmRegistered = false;
+          resetFcmRegistration();
           currentUserRole = null;
           return const LoginScreen();
         }
@@ -224,22 +134,21 @@ class AuthGate extends StatelessWidget {
             }
             currentUserRole = role;
             final uid = authSnap.data!.uid;
-            if (!_fcmRegistered) {
-              WidgetsBinding.instance.addPostFrameCallback((_) => _registerFcm(uid));
+            if (!fcmRegistered) {
+              WidgetsBinding.instance.addPostFrameCallback((_) => registerFcm(uid, onNotificationTap: routeFromNotification));
             }
 
             // ปลายทางค้างจากการแตะแจ้งเตือนตอนแอปปิดอยู่ (getInitialMessage) — ใช้ครั้งเดียวแล้วเคลียร์ทิ้ง
             if (pendingNotifType != null) {
               final type = pendingNotifType;
               pendingNotifType = null;
-              if (role == 'patient' && ['queue_called', 'morning_reminder', 'booking_cancelled'].contains(type)) {
-                return const MainNavigation(initialIndex: 1);
-              }
-              if (role == 'staff' && type == 'sos_new') {
-                return const StaffNavigation(initialIndex: 1);
-              }
-              if (role == 'staff' && ['booking_created', 'booking_cancelled'].contains(type)) {
-                return const StaffNavigation(initialIndex: 0);
+              final dest = notificationDestination(role: role, type: type);
+              if (dest != null) {
+                return switch (dest) {
+                  NotifDestination.patientQueue => const MainNavigation(initialIndex: 1),
+                  NotifDestination.staffSos => const StaffNavigation(initialIndex: 1),
+                  NotifDestination.staffQueue => const StaffNavigation(initialIndex: 0),
+                };
               }
             }
 
