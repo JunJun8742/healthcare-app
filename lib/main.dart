@@ -14,6 +14,7 @@ import 'package:healthcare_app/services/fcm_service.dart';
 import 'package:healthcare_app/services/appointment_service.dart';
 import 'package:healthcare_app/services/queue_slot_service.dart';
 import 'package:healthcare_app/services/availability_service.dart';
+import 'package:healthcare_app/services/sos_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,7 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 final QueueSlotService queueSlots = QueueSlotService();
 final AvailabilityService availability = AvailabilityService();
 final AppointmentService appointments = AppointmentService();
+final SosService sos = SosService();
 
 class HealthcareStation extends StatelessWidget {
   const HealthcareStation({super.key});
@@ -2340,7 +2342,7 @@ class _SOSScreenState extends State<SOSScreen> {
     try {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
       String patientName = userDoc.data()?['fullname'] ?? 'ผู้ป่วยไม่ทราบชื่อ';
-      await FirebaseFirestore.instance.collection('sos_alerts').add({'patientUid': user.uid, 'patientName': patientName, 'issue': message, 'status': 'รอรับเรื่อง', 'createdAt': FieldValue.serverTimestamp()});
+      await sos.sendAlert(patientUid: user.uid, patientName: patientName, issue: message);
       if (mounted) {
         showDialog(
           context: context, barrierDismissible: false,
@@ -2928,7 +2930,7 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
 
-  Future<void> resolve(String docId) async => FirebaseFirestore.instance.collection('sos_alerts').doc(docId).update({'status': 'รับเรื่องแล้ว', 'resolvedAt': FieldValue.serverTimestamp()});
+  Future<void> resolve(String docId) async => sos.resolveAlert(docId);
 
   Future<void> _confirmResolve(BuildContext context, String docId, String patientName) async {
     final ok = await showDialog<bool>(
@@ -3025,7 +3027,7 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
   }
 
   Widget _pending() => StreamBuilder<QuerySnapshot>(
-    stream: FirebaseFirestore.instance.collection('sos_alerts').where('status', isEqualTo: 'รอรับเรื่อง').snapshots(),
+    stream: sos.pendingAlerts(),
     builder: (ctx, snap) {
       if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Colors.red));
       if (!snap.hasData || snap.data!.docs.isEmpty) return const StateMessage(icon: Icons.verified_user_rounded, message: 'ไม่มีเหตุฉุกเฉินในขณะนี้');
@@ -3099,7 +3101,7 @@ class _StaffSOSScreenState extends State<StaffSOSScreen> with SingleTickerProvid
   );
 
   Widget _history() => StreamBuilder<QuerySnapshot>(
-    stream: FirebaseFirestore.instance.collection('sos_alerts').where('status', isEqualTo: 'รับเรื่องแล้ว').snapshots(),
+    stream: sos.resolvedAlerts(),
     builder: (ctx, snap) {
       if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
       if (!snap.hasData || snap.data!.docs.isEmpty) {
