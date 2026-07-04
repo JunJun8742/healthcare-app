@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:healthcare_app/core/format.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/services/availability_service.dart';
 
@@ -32,13 +33,11 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
     _load();
   }
 
-  String _fmt(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year + 543}';
-
   Future<void> _load() async {
     setState(() { isLoading = true; selectedTimes = {}; isLocked = false; });
     try {
       String staffUid = FirebaseAuth.instance.currentUser?.uid ?? 'staff';
-      Set<String>? times = await availability.staffTimes(staffUid: staffUid, date: _fmt(upcomingDays[selectedDateIndex]));
+      Set<String>? times = await availability.staffTimes(staffUid: staffUid, date: thaiBuddhistDate(upcomingDays[selectedDateIndex]));
       if (times != null && mounted) setState(() { selectedTimes = times; isLocked = true; });
     } catch (_) {}
     if (mounted) setState(() => isLoading = false);
@@ -47,7 +46,7 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
   Future<void> _save() async {
     setState(() => isSaving = true);
     try {
-      String dateStr = _fmt(upcomingDays[selectedDateIndex]);
+      String dateStr = thaiBuddhistDate(upcomingDays[selectedDateIndex]);
       List<String> sorted = selectedTimes.toList()..sort((a, b) {
         final aP = a.split(':'); final bP = b.split(':');
         int aMin = int.parse(aP[0]) * 60 + int.parse(aP[1]);

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:healthcare_app/core/format.dart';
+import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/services/appointment_service.dart';
 
@@ -14,8 +16,6 @@ class StaffTreatmentHistoryScreen extends StatefulWidget {
 class _StaffTreatmentHistoryScreenState extends State<StaffTreatmentHistoryScreen> {
   DateTime? selectedDate;
 
-  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year + 543}';
-
   Future<void> _pickDate() async {
     DateTime? picked = await showDatePicker(
       context: context,
@@ -28,7 +28,7 @@ class _StaffTreatmentHistoryScreenState extends State<StaffTreatmentHistoryScree
 
   @override
   Widget build(BuildContext context) {
-    String? filterDate = selectedDate != null ? _fmtDate(selectedDate!) : null;
+    String? filterDate = selectedDate != null ? thaiBuddhistDate(selectedDate!) : null;
     return Scaffold(
       backgroundColor: bgWhite,
       body: SafeArea(bottom: false, child: Column(children: [
@@ -94,13 +94,13 @@ class _StaffTreatmentHistoryScreenState extends State<StaffTreatmentHistoryScree
                 itemCount: docs.length,
                 itemBuilder: (_, i) {
                   var data = docs[i].data() as Map<String, dynamic>;
-                  String status = data['status'] ?? 'กำลังรอ';
+                  String status = data['status'] ?? QueueStatus.waiting;
                   Color sc; IconData sIcon;
                   switch (status) {
-                    case 'เสร็จสิ้น': sc = const Color(0xff2e7d32); sIcon = Icons.check_circle_rounded; break;
-                    case 'กำลังรักษา': sc = const Color(0xffe65100); sIcon = Icons.medical_services_rounded; break;
-                    case 'เรียกคิว': sc = const Color(0xff1565c0); sIcon = Icons.campaign_rounded; break;
-                    case 'ยกเลิก': sc = Colors.red.shade700; sIcon = Icons.cancel_rounded; break;
+                    case QueueStatus.done: sc = const Color(0xff2e7d32); sIcon = Icons.check_circle_rounded; break;
+                    case QueueStatus.treating: sc = const Color(0xffe65100); sIcon = Icons.medical_services_rounded; break;
+                    case QueueStatus.called: sc = const Color(0xff1565c0); sIcon = Icons.campaign_rounded; break;
+                    case QueueStatus.cancelled: sc = Colors.red.shade700; sIcon = Icons.cancel_rounded; break;
                     default: sc = const Color(0xff2d6a4f); sIcon = Icons.access_time_rounded;
                   }
                   String notes = (data['notes'] ?? '').toString();

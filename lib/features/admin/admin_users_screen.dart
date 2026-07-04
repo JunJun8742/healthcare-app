@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:healthcare_app/core/photo.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/services/user_service.dart';
 import 'package:healthcare_app/services/fcm_service.dart';
@@ -155,8 +155,8 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerPr
           final name = data['fullname'] ?? 'ไม่ระบุชื่อ';
           final email = data['email'] ?? '';
           final photo = data['photoBase64'] ?? '';
-          ImageProvider? photoImg;
-          if (photo.isNotEmpty) { try { photoImg = MemoryImage(base64Decode(photo)); } catch (_) {} }
+          final photoBytes = tryDecodePhotoBase64(photo);
+          ImageProvider? photoImg = photoBytes != null ? MemoryImage(photoBytes) : null;
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(

@@ -67,10 +67,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
             padding: const EdgeInsets.all(16), itemCount: docs.length,
             itemBuilder: (context, i) {
               final data = docs[i].data() as Map<String, dynamic>;
-              String status = data['status'] ?? 'กำลังรอ';
+              String status = data['status'] ?? QueueStatus.waiting;
               final s = statusInfo(status);
               Color sc = s.color;
-              bool isCancelled = status == 'ยกเลิก';
+              bool isCancelled = status == QueueStatus.cancelled;
               return GestureDetector(
                 onTap: () => _showDetail(context, data),
                 child: Opacity(

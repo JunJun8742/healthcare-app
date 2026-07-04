@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:healthcare_app/core/format.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/widgets.dart';
@@ -22,7 +23,6 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
   String searchQuery = '';
   String statusFilter = ''; // '' = ทั้งหมด
   bool _isCustomDay = false;
-  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year + 543}';
   bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
   Widget _dayChip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
@@ -75,11 +75,11 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     );
     if (ok != true) return;
     await appointments.updateStatus(docId, toStatus: toStatus, extra: extra);
-    if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+    if (toStatus == QueueStatus.cancelled && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
       queueSlots.release(staffUid: staffUid, date: date, time: time);
     }
     if (!context.mounted) return;
-    final undoable = toStatus == 'ยกเลิก' || toStatus == 'เสร็จสิ้น';
+    final undoable = toStatus == QueueStatus.cancelled || toStatus == QueueStatus.done;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('เปลี่ยนสถานะคิว $queueNo เป็น ${s.label} แล้ว', style: GoogleFonts.notoSansThai()),
       backgroundColor: s.color,
@@ -104,7 +104,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                 revertMap[k] = prevValues.containsKey(k) ? prevValues[k] : FieldValue.delete();
               }
               await appointments.updateFields(docId, revertMap);
-              if (toStatus == 'ยกเลิก' && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
+              if (toStatus == QueueStatus.cancelled && staffUid.isNotEmpty && date.isNotEmpty && time.isNotEmpty) {
                 queueSlots.relock(staffUid: staffUid, date: date, time: time, apptId: docId);
               }
             })
@@ -113,7 +113,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
   }
 
   Future<void> _callNext(BuildContext context, List<QueryDocumentSnapshot> docs) async {
-    final waiting = docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == 'กำลังรอ').toList()
+    final waiting = docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == QueueStatus.waiting).toList()
       ..sort((a, b) => ((a.data() as Map<String, dynamic>)['queueNo'] ?? '').toString()
           .compareTo(((b.data() as Map<String, dynamic>)['queueNo'] ?? '').toString()));
     if (waiting.isEmpty) {
@@ -122,7 +122,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
       return;
     }
     final m = waiting.first.data() as Map<String, dynamic>;
-    await _changeStatus(context, waiting.first.id, m['queueNo'] ?? '', m['patientName'] ?? '', 'กำลังรอ', 'เรียกคิว');
+    await _changeStatus(context, waiting.first.id, m['queueNo'] ?? '', m['patientName'] ?? '', QueueStatus.waiting, QueueStatus.called);
   }
 
   void _completeDialog(BuildContext ctx, String docId, String queueNo, String patientName, {String prevNotes = '', String staffUid = '', String date = '', String time = ''}) {
@@ -144,7 +144,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
             onPressed: () {
               Navigator.pop(ctx);
               final notes = notesCtrl.text.trim();
-              _changeStatus(ctx, docId, queueNo, patientName, 'กำลังรักษา', 'เสร็จสิ้น',
+              _changeStatus(ctx, docId, queueNo, patientName, QueueStatus.treating, QueueStatus.done,
                   extra: {'completedAt': FieldValue.serverTimestamp(), if (notes.isNotEmpty) 'notes': notes},
                   prevValues: {if (notes.isNotEmpty && prevNotes.isNotEmpty) 'notes': prevNotes},
                   staffUid: staffUid, date: date, time: time);
@@ -163,18 +163,18 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
       body: SafeArea(
         bottom: false,
         child: StreamBuilder<QuerySnapshot>(
-        stream: appointments.appointmentsForDate(_fmtDate(selectedDay)),
+        stream: appointments.appointmentsForDate(thaiBuddhistDate(selectedDay)),
         builder: (context, snap) {
           if (snap.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: primaryGreen));
           // allDocs: non-terminal (excludes เสร็จสิ้น/ยกเลิก) — drives header stats
           // and _callNext, which must never consider completed/cancelled queues.
-          var allDocs = (snap.data?.docs ?? []).where((d) => !['เสร็จสิ้น', 'ยกเลิก'].contains(d['status'])).toList()
+          var allDocs = (snap.data?.docs ?? []).where((d) => !QueueStatus.terminal.contains(d['status'])).toList()
             ..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return ta.compareTo(tb); });
           // fullDayDocs: every appointment for the day, terminal states included —
           // needed so the 'เสร็จสิ้น' chip has something to show.
           var fullDayDocs = (snap.data?.docs ?? []).toList()
             ..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return ta.compareTo(tb); });
-          var listSource = statusFilter == 'เสร็จสิ้น' ? fullDayDocs : allDocs;
+          var listSource = statusFilter == QueueStatus.done ? fullDayDocs : allDocs;
           var docs = listSource.where((d) {
             final m = d.data() as Map<String, dynamic>;
             final okStatus = statusFilter.isEmpty || m['status'] == statusFilter;
@@ -184,9 +184,9 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                 (m['queueNo'] ?? '').toString().contains(q);
             return okStatus && okSearch;
           }).toList();
-          int waiting = allDocs.where((d) => d['status'] == 'กำลังรอ').length;
-          int calling = allDocs.where((d) => d['status'] == 'เรียกคิว').length;
-          int treating = allDocs.where((d) => d['status'] == 'กำลังรักษา').length;
+          int waiting = allDocs.where((d) => d['status'] == QueueStatus.waiting).length;
+          int calling = allDocs.where((d) => d['status'] == QueueStatus.called).length;
+          int treating = allDocs.where((d) => d['status'] == QueueStatus.treating).length;
 
           return Column(children: [
             // ── Header ──
@@ -263,7 +263,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                       setState(() { selectedDay = DateTime.now().add(const Duration(days: 1)); _isCustomDay = false; });
                     }),
                     const SizedBox(width: kGapS),
-                    _dayChip(_isCustomDay ? _fmtDate(selectedDay) : 'เลือกวัน', _isCustomDay, () async {
+                    _dayChip(_isCustomDay ? thaiBuddhistDate(selectedDay) : 'เลือกวัน', _isCustomDay, () async {
                       final now = DateTime.now();
                       final picked = await showDatePicker(
                         context: context,
@@ -330,22 +330,22 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                     itemCount: docs.length,
                     itemBuilder: (_, i) {
                       var doc = docs[i]; var data = doc.data() as Map<String, dynamic>;
-                      String status = data['status'] ?? 'กำลังรอ';
+                      String status = data['status'] ?? QueueStatus.waiting;
                       String queueNo = data['queueNo'] ?? '-';
                       String patientName = data['patientName'] ?? '-';
                       Color statusColor; IconData sIcon; List<Color> btnGrad; String btnLabel; VoidCallback? btnAction;
                       switch (status) {
-                        case 'เรียกคิว':
+                        case QueueStatus.called:
                           statusColor = Colors.blue.shade600; sIcon = Icons.campaign_rounded;
                           btnGrad = [Colors.blue.shade400, Colors.blue.shade700]; btnLabel = 'เริ่มรักษา';
-                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, 'เรียกคิว', 'กำลังรักษา');
+                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, QueueStatus.called, QueueStatus.treating);
                           break;
-                        case 'กำลังรักษา':
+                        case QueueStatus.treating:
                           statusColor = Colors.orange.shade700; sIcon = Icons.medical_services_rounded;
                           btnGrad = [Colors.green.shade400, const Color(0xff186B44)]; btnLabel = 'เสร็จสิ้น';
                           btnAction = () => _completeDialog(context, doc.id, queueNo, patientName, prevNotes: data['notes'] ?? '');
                           break;
-                        case 'เสร็จสิ้น':
+                        case QueueStatus.done:
                           statusColor = const Color(0xff4B6358); sIcon = Icons.check_circle_rounded;
                           btnGrad = [Colors.grey.shade400, Colors.grey.shade600]; btnLabel = 'เสร็จสิ้นแล้ว';
                           btnAction = null;
@@ -353,7 +353,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                         default:
                           statusColor = primaryGreen; sIcon = Icons.access_time_rounded;
                           btnGrad = [Colors.blue.shade300, Colors.blue.shade700]; btnLabel = 'เรียกคิว';
-                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, 'กำลังรอ', 'เรียกคิว');
+                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, QueueStatus.waiting, QueueStatus.called);
                       }
                       return Container(
                         margin: const EdgeInsets.only(bottom: 14),

@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:healthcare_app/core/photo.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/widgets.dart';
@@ -39,8 +39,8 @@ class HomeScreen extends StatelessWidget {
             name = d['fullname'] ?? 'ผู้ใช้งาน';
             photoBase64 = d['photoBase64'] ?? '';
           }
-          ImageProvider? photo;
-          if (photoBase64.isNotEmpty) { try { photo = MemoryImage(base64Decode(photoBase64)); } catch (_) {} }
+          final photoBytes = tryDecodePhotoBase64(photoBase64);
+          ImageProvider? photo = photoBytes != null ? MemoryImage(photoBytes) : null;
 
           return SafeArea(
             child: ListView(
@@ -95,7 +95,7 @@ class HomeScreen extends StatelessWidget {
                         if (snap.hasData && snap.data!.docs.isNotEmpty) {
                           var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
                           var latest = docs.first;
-                          if (!['เสร็จสิ้น', 'ยกเลิก'].contains(latest['status'])) {
+                          if (!QueueStatus.terminal.contains(latest['status'])) {
                             qNo = latest['queueNo'] ?? '';
                             status = latest['status'] ?? '';
                             activeDocId = latest.id;
@@ -160,7 +160,7 @@ class HomeScreen extends StatelessWidget {
                                         const SizedBox(width: 6),
                                         Text('นัดเวลา $time', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14)),
                                       ]),
-                                    if (activeDocId != null && status == 'กำลังรอ') ...[
+                                    if (activeDocId != null && status == QueueStatus.waiting) ...[
                                       const SizedBox(height: 12),
                                       GestureDetector(
                                         onTap: () => _confirmCancel(context, activeDocId!, staffUid: activeStaffUid, date: activeDate, time: time),

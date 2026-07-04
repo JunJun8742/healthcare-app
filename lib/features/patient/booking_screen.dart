@@ -1,8 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:healthcare_app/core/format.dart';
+import 'package:healthcare_app/core/photo.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/services/appointment_service.dart';
 import 'package:healthcare_app/services/availability_service.dart';
@@ -67,12 +68,10 @@ class _BookingScreenState extends State<BookingScreen> {
     _loadAvailability();
   }
 
-  String _fmt(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year + 543}';
-
   Future<void> _loadAvailability() async {
     if (!mounted) return;
     setState(() => loadingTimes = true);
-    String dateStr = _fmt(upcomingDays[selectedDateIndex]);
+    String dateStr = thaiBuddhistDate(upcomingDays[selectedDateIndex]);
     try {
       String staffUid = staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '';
       List<String> times = await availability.openTimes(staffUid: staffUid, date: dateStr);
@@ -92,7 +91,7 @@ class _BookingScreenState extends State<BookingScreen> {
         patientUid: user!.uid,
         doctor: staffList.isNotEmpty ? (staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ') : 'นักกายภาพ',
         staffUid: staffList.isNotEmpty ? (staffList[selectedStaffIndex]['uid'] ?? '') : '',
-        date: _fmt(upcomingDays[selectedDateIndex]),
+        date: thaiBuddhistDate(upcomingDays[selectedDateIndex]),
         time: availableTimes[selectedTimeIndex],
         machineId: selectedMachineId ?? '',
         machineName: selectedMachineName,
@@ -111,7 +110,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
   void _showConfirmSheet() {
     final staff = staffList[selectedStaffIndex];
-    final dateStr = _fmt(upcomingDays[selectedDateIndex]);
+    final dateStr = thaiBuddhistDate(upcomingDays[selectedDateIndex]);
     final time = availableTimes[selectedTimeIndex];
     showModalBottomSheet(
       context: context,
@@ -162,7 +161,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => BookingSuccessScreen(
                         queueNo: outcome.queueNo,
                         doctor: staffList[selectedStaffIndex]['fullname'] ?? 'นักกายภาพ',
-                        date: _fmt(upcomingDays[selectedDateIndex]),
+                        date: thaiBuddhistDate(upcomingDays[selectedDateIndex]),
                         time: availableTimes[selectedTimeIndex],
                         machineName: selectedMachineName,
                       )), (r) => false);
@@ -263,8 +262,8 @@ class _BookingScreenState extends State<BookingScreen> {
                   : Column(children: List.generate(staffList.length, (i) {
                       bool isSel = i == selectedStaffIndex;
                       final photo = staffList[i]['photoBase64'] ?? '';
-                      ImageProvider? photoImg;
-                      if (photo.isNotEmpty) { try { photoImg = MemoryImage(base64Decode(photo)); } catch (_) {} }
+                      final photoBytes = tryDecodePhotoBase64(photo);
+                      ImageProvider? photoImg = photoBytes != null ? MemoryImage(photoBytes) : null;
                       return GestureDetector(
                         onTap: () { setState(() { selectedStaffIndex = i; selectedTimeIndex = 0; }); _loadAvailability(); },
                         child: AnimatedContainer(

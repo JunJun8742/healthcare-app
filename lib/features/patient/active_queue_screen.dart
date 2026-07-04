@@ -30,10 +30,10 @@ class ActiveQueueScreen extends StatelessWidget {
           var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
           var latest = docs.first;
           var data = latest.data() as Map<String, dynamic>;
-          if (data['status'] == 'เสร็จสิ้น') return _empty('คิวของคุณเสร็จสิ้นแล้ว');
-          if (data['status'] == 'ยกเลิก') return _cancelled();
-          String status = data['status'] ?? 'กำลังรอ';
-          bool isWait = status == 'กำลังรอ', isCall = status == 'เรียกคิว', isTreat = status == 'กำลังรักษา';
+          if (data['status'] == QueueStatus.done) return _empty('คิวของคุณเสร็จสิ้นแล้ว');
+          if (data['status'] == QueueStatus.cancelled) return _cancelled();
+          String status = data['status'] ?? QueueStatus.waiting;
+          bool isWait = status == QueueStatus.waiting, isCall = status == QueueStatus.called, isTreat = status == QueueStatus.treating;
           final s = statusInfo(status);
           Color statusColor = s.color;
 

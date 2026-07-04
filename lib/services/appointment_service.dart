@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:healthcare_app/core/format.dart';
+import 'package:healthcare_app/core/status.dart';
 
 /// ผลลัพธ์การจองคิว — แทน sentinel string เดิม (__ACTIVE_QUEUE__)
 /// ฝั่งจอเป็นคนแสดง snackbar/นำทางตามผลลัพธ์เอง
@@ -39,7 +40,7 @@ class AppointmentService {
   // ---- writes ----
 
   Future<void> cancelByPatient(String docId) =>
-      _db.collection('appointments').doc(docId).update({'status': 'ยกเลิก', 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
+      _db.collection('appointments').doc(docId).update({'status': QueueStatus.cancelled, 'cancelledAt': FieldValue.serverTimestamp(), 'cancelledBy': 'patient'});
 
   Future<void> updateStatus(String docId, {required String toStatus, Map<String, dynamic> extra = const {}}) =>
       _db.collection('appointments').doc(docId).update({'status': toStatus, 'updatedAt': FieldValue.serverTimestamp(), ...extra});
@@ -53,7 +54,7 @@ class AppointmentService {
 
   /// คิวค้างของผู้ป่วย = สถานะใดสถานะหนึ่งใน กำลังรอ/เรียกคิว/กำลังรักษา
   Future<bool> hasActiveAppointment(String patientUid) async {
-    var existing = await _db.collection('appointments').where('patientUid', isEqualTo: patientUid).where('status', whereIn: ['กำลังรอ', 'เรียกคิว', 'กำลังรักษา']).get();
+    var existing = await _db.collection('appointments').where('patientUid', isEqualTo: patientUid).where('status', whereIn: QueueStatus.active).get();
     return existing.docs.isNotEmpty;
   }
 
@@ -117,7 +118,7 @@ class AppointmentService {
           'doctor': doctor,
           'staffUid': staffUid,
           'date': date, 'time': time,
-          'status': 'กำลังรอ', 'notes': '', 'machineId': machineId, 'machineName': machineName, 'createdAt': FieldValue.serverTimestamp(),
+          'status': QueueStatus.waiting, 'notes': '', 'machineId': machineId, 'machineName': machineName, 'createdAt': FieldValue.serverTimestamp(),
         });
       });
 

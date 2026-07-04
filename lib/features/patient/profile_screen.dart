@@ -1,10 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:healthcare_app/core/photo.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/services/fcm_service.dart';
 import 'package:healthcare_app/services/user_service.dart';
@@ -30,7 +30,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => isUploading = true);
     try {
       final bytes = await File(picked.path).readAsBytes();
-      final base64Str = base64Encode(bytes);
+      final base64Str = encodePhotoBase64(bytes);
       final uid = FirebaseAuth.instance.currentUser!.uid;
       await users.updatePhotoBase64(uid: uid, photoBase64: base64Str);
       if (mounted) setState(() {});
@@ -86,10 +86,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
           bool isStaff = role == 'staff';
           Color accentColor = isStaff ? Colors.orange : primaryGreen;
-          ImageProvider? photoImage;
-          if (photoBase64.isNotEmpty) {
-            try { photoImage = MemoryImage(base64Decode(photoBase64)); } catch (_) {}
-          }
+          final photoBytes = tryDecodePhotoBase64(photoBase64);
+          ImageProvider? photoImage = photoBytes != null ? MemoryImage(photoBytes) : null;
 
           return Center(
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
