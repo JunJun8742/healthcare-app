@@ -18,3 +18,6 @@ class SosService {
     await _db.collection('sos_alerts').doc(alertId).update({'status': 'รับเรื่องแล้ว', 'resolvedAt': FieldValue.serverTimestamp()});
   }
 }
+
+/// อินสแตนซ์กลางที่แชร์ทั้งแอป (default Firestore)
+final SosService sos = SosService();

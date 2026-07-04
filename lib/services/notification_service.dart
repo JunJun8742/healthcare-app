@@ -16,3 +16,6 @@ class NotificationService {
 
   Future<void> markRead(DocumentReference<Object?> ref) => ref.update({'read': true});
 }
+
+/// อินสแตนซ์กลางที่แชร์ทั้งแอป (default Firestore)
+final NotificationService notifications = NotificationService();

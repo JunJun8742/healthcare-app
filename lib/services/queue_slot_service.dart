@@ -30,3 +30,6 @@ class QueueSlotService {
     }
   }
 }
+
+/// อินสแตนซ์กลางที่แชร์ทั้งแอป (default Firestore)
+final QueueSlotService queueSlots = QueueSlotService();

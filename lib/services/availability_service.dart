@@ -53,3 +53,6 @@ class AvailabilityService {
     });
   }
 }
+
+/// อินสแตนซ์กลางที่แชร์ทั้งแอป (default Firestore)
+final AvailabilityService availability = AvailabilityService();

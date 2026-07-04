@@ -37,3 +37,6 @@ class UserService {
     await batch.commit();
   }
 }
+
+/// อินสแตนซ์กลางที่แชร์ทั้งแอป (default Firestore)
+final UserService users = UserService();

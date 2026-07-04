@@ -127,3 +127,6 @@ class AppointmentService {
     }
   }
 }
+
+/// อินสแตนซ์กลางที่แชร์ทั้งแอป (default Firestore)
+final AppointmentService appointments = AppointmentService();
