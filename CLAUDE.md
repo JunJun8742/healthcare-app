@@ -39,7 +39,39 @@ There is no single-test runner since there's no `test/` suite yet — `flutter a
 
 ## Architecture
 
-This is a **single-file Flutter app** — the entire application (screens, models, routing, Firestore calls, theme) lives in [`lib/main.dart`](lib/main.dart) (~3200 lines). There are no separate files for screens/models/services. Keep changes compatible with this single-file structure unless a task explicitly calls for a broader refactor.
+Feature-split app with an extracted service/logic layer (Dart package: `healthcare_app`; absolute `package:healthcare_app/...` imports everywhere):
+
+```text
+lib/
+  main.dart                  # bootstrap only: Firebase init + initFcmBootstrap + runApp
+  app/app.dart               # HealthcareStation (MaterialApp), AuthGate role routing,
+                             #   appNavigatorKey, routeFromNotification (widget mapping)
+  core/
+    theme.dart               # colors, spacing tokens, tTitle/tBody/tCaption
+    status.dart              # QueueStatus/SosStatus constants (exact Firestore values) + statusInfo()
+    format.dart              # thaiBuddhistDate, queueSlotDateKey, relativeTimeTh,
+                             #   isMachineStale, compareCreatedAtDesc
+    photo.dart               # encodePhotoBase64 / tryDecodePhotoBase64
+    widgets.dart             # StateMessage, MachineStatusCard, icon3D
+  services/                  # all Firestore/FCM I/O; classes take {FirebaseFirestore? db}
+                             #   defaulting to .instance (inject fake_cloud_firestore in tests);
+                             #   each file ends with a shared instance (queueSlots, availability,
+                             #   appointments, sos, users, notifications)
+    fcm_service.dart         # token lifecycle, notificationDestination() decision table
+    queue_slot_service.dart  # queue_slots release/relock (doc ID sanitizes '/'->'-')
+    availability_service.dart# staff_availability (doc ID keeps raw Thai date)
+    appointment_service.dart # booking transaction -> sealed BookingOutcome, streams, status updates
+    sos_service.dart / user_service.dart / notification_service.dart
+  features/
+    auth/                    # login, register, staff_register
+    patient/                 # main_navigation, home, booking(+success), active_queue,
+                             #   history, profile, notification, sos (profile/notification
+                             #   are shared with staff — import, don't duplicate)
+    staff/                   # staff_navigation, queue, sos, history, availability
+    admin/                   # admin_navigation, admin_users
+```
+
+Layering rule: Firestore queries/writes live in `services/`, pure logic in `core/`, UI state (StreamBuilder/setState/snackbars) in `features/`. A few deliberate import cycles exist (e.g. profile_screen → app.dart for AuthGate) — legal in Dart, don't add indirection to remove them.
 
 ### Tech Stack
 - **Firebase Auth** — email/password authentication
@@ -50,7 +82,7 @@ This is a **single-file Flutter app** — the entire application (screens, model
 
 ### Global Colors & Theme
 
-Defined near the top of `main.dart`, used everywhere:
+Defined in `lib/core/theme.dart`, used everywhere:
 ```dart
 const Color primaryGreen = Color(0xff186B44);
 const Color lightGreen   = Color(0xffE6F4EA);
@@ -86,17 +118,18 @@ Use `.withValues(alpha: ...)` instead of the deprecated `.withOpacity(...)`.
 
 `กำลังรอ` (waiting) → `เรียกคิว` (called) → `กำลังรักษา` (treating) → `เสร็จสิ้น` (completed), plus a cancelled state. SOS alerts have separate pending/resolved states.
 
-Status strings are stored verbatim as Thai text in Firestore — preserve exact values when editing logic. Search for status comparisons in `HomeScreen`, `ActiveQueueScreen`, `StaffQueueScreen`, and `StaffSOSScreen` before changing any status flow.
+Status strings are stored verbatim as Thai text in Firestore — use the `QueueStatus`/`SosStatus` constants from `lib/core/status.dart` instead of retyping literals, and never change the constant values. (One literal filter-chip list remains in `staff_queue_screen.dart` because its shape — `''` + no cancelled — matches no constant.)
 
 Controlled by staff in `StaffQueueScreen`. Patients see real-time updates via Firestore streams in `ActiveQueueScreen` and `HomeScreen`. Sorting is done **client-side** (by `createdAt`) to avoid Firestore composite index requirements — be careful before adding chained `where`/`orderBy` queries, since they may require a new index.
 
 ### Key Widgets & Helpers
 
-- **`_icon3D(IconData, List<Color>, double size)`** — gradient container + double BoxShadow + shine overlay. Used for all action/service card icons.
-- **`MachineStatusCard(machineId, machineName)`** — StreamBuilder on `machine_status/{machineId}`; marks stale if `last_updated` is more than 30 seconds old (ESP32 heartbeat timeout). Appointments reference a specific machine via `machineId`/`machineName`.
-- **`staff_availability` doc ID** — always `${staffUid}_${dateStr}` (e.g. `abc123_2024-06-21`). Use `.doc(docId).get()` directly to avoid a composite index.
-- **Profile photos** — stored as base64 strings in `users/{uid}.photoBase64`, rendered with `MemoryImage(base64Decode(photoBase64))`. No Firebase Storage is used.
-- **Date/availability** — some staff-availability UI displays dates in Thai/Buddhist-year format; booking logic reads availability by direct document ID lookup where possible.
+- **`icon3D(IconData, List<Color>, double size)`** (`core/widgets.dart`) — gradient container + double BoxShadow + shine overlay, used for action/service card icons. (`StaffSOSScreen` has its own private `_sosIcon3D` — a different implementation, kept separate on purpose.)
+- **`MachineStatusCard(machineId, machineName)`** (`core/widgets.dart`) — StreamBuilder on `machine_status/{machineId}`; marks stale via `isMachineStale` (`core/format.dart`, 30s ESP32 heartbeat timeout). Appointments reference a specific machine via `machineId`/`machineName`.
+- **Doc-ID builders** — `AvailabilityService.docId` keeps the raw Thai date (`abc123_21/06/2569`); `QueueSlotService.docId` sanitizes `/`→`-`. Both use direct `.doc(id).get()` lookups to avoid composite indexes. Don't unify them — the stored data depends on each format.
+- **Booking** — `AppointmentService.createBooking` runs the day-counter + slot-lock + appointment transaction and returns a sealed `BookingOutcome` (`BookingSuccess`/`BookingBlockedByActiveQueue`/`BookingFailed`); snackbars/navigation stay in `BookingScreen`.
+- **Profile photos** — base64 strings in `users/{uid}.photoBase64`; use `core/photo.dart` (`tryDecodePhotoBase64` → `MemoryImage`). No Firebase Storage is used.
+- **FCM** — `services/fcm_service.dart` owns token lifecycle + the pure `notificationDestination(role, type)` table; widget mapping lives in `app/app.dart` (`routeFromNotification`).
 
 ### Assets
 
@@ -110,5 +143,7 @@ All UI strings and code comments are in Thai. Keep user-facing strings in Thai u
 
 ## Editing Guidance
 
-- Prefer small, focused edits in `lib/main.dart` that match the surrounding style; avoid broad file splitting or architecture changes unless requested.
+- Keep the layering: Firestore/FCM I/O in `services/`, pure logic in `core/`, UI in `features/`. Don't put queries in widgets or widgets in services.
+- Services take `{FirebaseFirestore? db}` defaulting to `.instance` — preserve this so tests can inject `fake_cloud_firestore`.
+- Match the surrounding style (Thai comments, compact widget builders); prefer small, focused edits.
 - Do not commit secrets or regenerate Firebase config (`flutterfire configure`, `google-services.json`) unless that is the explicit task.

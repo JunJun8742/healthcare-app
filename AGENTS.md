@@ -4,7 +4,20 @@
 
 This is a Flutter healthcare queue app. The UI is Thai-first and uses Firebase for authentication and real-time data.
 
-The application is intentionally concentrated in `lib/main.dart`; keep changes compatible with that single-file structure unless the task explicitly calls for a broader refactor.
+The app is split by feature with an extracted service/logic layer (Dart package name: `healthcare_app`):
+
+```text
+lib/
+  main.dart                  # bootstrap only: Firebase init + FCM bootstrap + runApp
+  app/app.dart               # HealthcareStation (MaterialApp), AuthGate, notification routing
+  core/                      # theme.dart, status.dart (QueueStatus/SosStatus + statusInfo),
+                             # format.dart (Thai dates, comparators), photo.dart (base64), widgets.dart
+  services/                  # Firestore/FCM I/O behind classes with injectable {FirebaseFirestore? db}
+                             # fcm, queue_slot, availability, appointment, sos, user, notification
+  features/                  # screens by role: auth/, patient/, staff/, admin/
+```
+
+Services own Firestore I/O; screens own UI state (StreamBuilder/setState/snackbars). Each service file ends with a shared default instance (e.g. `final SosService sos = SosService();`). Use absolute `package:healthcare_app/...` imports.
 
 ## Common Commands
 
@@ -40,7 +53,9 @@ flutterfire configure
 
 ## Important Files
 
-- `lib/main.dart`: main app, screens, routing, Firestore calls, helpers, and theme constants.
+- `lib/app/app.dart`: MaterialApp root, `AuthGate` role routing, notification tap routing.
+- `lib/core/status.dart`: `QueueStatus`/`SosStatus` constants (exact Firestore values) + `statusInfo()`.
+- `lib/services/appointment_service.dart`: booking transaction and typed `BookingOutcome`.
 - `lib/firebase_options.dart`: generated Firebase configuration.
 - `pubspec.yaml`: dependencies and asset registration.
 - `assets/hart.png`: heart/logo asset used instead of favorite icons.
@@ -61,7 +76,7 @@ flutterfire configure
 
 ## Theme And UI Conventions
 
-Global colors are defined near the top of `lib/main.dart`:
+Global colors are defined in `lib/core/theme.dart`:
 
 ```dart
 const Color primaryGreen = Color(0xff186B44);
@@ -83,7 +98,7 @@ Keep the green healthcare visual language consistent. The app commonly uses roun
 
 ## Queue And Status Conventions
 
-Queue and SOS status strings are stored as Thai UI text, so preserve the exact values already present in `lib/main.dart` when changing logic. Search for the status comparisons in `HomeScreen`, `ActiveQueueScreen`, `StaffQueueScreen`, and `StaffSOSScreen` before editing any status flow.
+Queue and SOS status strings are stored as Thai text in Firestore. Use the `QueueStatus`/`SosStatus` constants from `lib/core/status.dart` — never retype the literals, and never change the constant values.
 
 The active queue flow is:
 
@@ -97,7 +112,7 @@ Sorting is often done client-side by `createdAt` to avoid extra Firestore compos
 
 ## Date And Availability Notes
 
-- Staff availability document IDs are built as `${staffUid}_${dateStr}`.
+- Staff availability document IDs are built as `${staffUid}_${dateStr}` (raw Thai date, `/` intact — see `AvailabilityService.docId`); `queue_slots` IDs sanitize `/`→`-` (see `QueueSlotService.docId`).
 - Date strings in the current UI use Thai/Buddhist-year display format in parts of the staff availability flow.
 - Booking logic reads availability by direct document ID lookup where possible.
 
@@ -113,8 +128,8 @@ Run `flutter test` when behavior changes or when adding tests. This repository m
 
 ## Editing Guidance
 
-- Prefer small, focused edits in `lib/main.dart` that match the surrounding style.
+- Keep the layering: Firestore/FCM I/O in `lib/services/`, pure logic in `lib/core/`, UI in `lib/features/`. Don't put queries in widgets.
+- Services take `{FirebaseFirestore? db}` (default `.instance`) so tests can inject `fake_cloud_firestore` — preserve that pattern in new methods.
 - Keep user-facing strings in Thai unless a task specifically asks otherwise.
-- Avoid broad file splitting or architecture changes unless requested.
 - Do not commit secrets or regenerate Firebase config unless that is the requested task.
-- Profile photos are stored as base64 strings in Firestore and rendered with `MemoryImage(base64Decode(...))`.
+- Profile photos are stored as base64 strings in Firestore; use `core/photo.dart` helpers (`encodePhotoBase64`/`tryDecodePhotoBase64`).
