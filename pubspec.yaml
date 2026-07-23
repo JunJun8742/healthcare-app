@@ -53,6 +53,16 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# สร้างไอคอนแอปทุกขนาดจากรูปต้นฉบับ: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true                            # iOS ห้ามไอคอนโปร่งใส
+  image_path: "assets/app_icon_opaque.png"          # legacy Android + iOS (พื้นขาวทึบ)
+  adaptive_icon_background: "#FFFFFF"                # Android 8+ พื้นหลัง
+  adaptive_icon_foreground: "assets/app_icon_padded.png"  # เนื้อหาย่อไว้ใน safe zone แล้ว
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
