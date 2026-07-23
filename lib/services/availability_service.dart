@@ -5,9 +5,11 @@ class AvailabilityService {
   AvailabilityService({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
   final FirebaseFirestore _db;
 
-  // staff_availability doc IDs use the RAW Thai Buddhist date (e.g. dd/MM/yyyy+543,
-  // with '/' intact) — no sanitization, unlike queue_slots' dateKey.
-  String docId({required String staffUid, required String date}) => '${staffUid}_$date';
+  // staff_availability doc IDs sanitize '/' -> '-' just like queue_slots'
+  // dateKey — a literal '/' in a Firestore .doc() path is a path separator,
+  // not a character, so it silently nests the write into a subcollection
+  // and bypasses the flat `staff_availability/{id}` security rule entirely.
+  String docId({required String staffUid, required String date}) => '${staffUid}_${queueSlotDateKey(date)}';
 
   /// อ่านเวลาว่างของเจ้าหน้าที่จาก staff_availability — ใช้โดย BookingScreen
   /// เพื่อดึงรายการเวลาที่เจ้าหน้าที่เปิดไว้ในวันนั้น
