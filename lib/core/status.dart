@@ -24,9 +24,9 @@ abstract final class SosStatus {
     case 'เรียกคิว':
       return (color: const Color(0xff1D4ED8), icon: Icons.campaign_rounded, label: 'เรียกคิว');
     case 'กำลังรักษา':
-      return (color: primaryGreen, icon: Icons.healing_rounded, label: 'กำลังรักษา');
+      return (color: primaryGreen, icon: Icons.healing_rounded, label: 'เข้ารับบริการแล้ว');
     case 'เสร็จสิ้น':
-      return (color: const Color(0xff4B6358), icon: Icons.check_circle_rounded, label: 'เสร็จสิ้น');
+      return (color: const Color(0xff4B6358), icon: Icons.check_circle_rounded, label: 'บริการเสร็จสิ้น');
     case 'ยกเลิก':
       return (color: const Color(0xffB91C1C), icon: Icons.cancel_rounded, label: 'ยกเลิก');
     default:

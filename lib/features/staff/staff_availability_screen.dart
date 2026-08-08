@@ -44,6 +44,11 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
   }
 
   Future<void> _save() async {
+    final staffUid = FirebaseAuth.instance.currentUser?.uid;
+    if (staffUid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่'), backgroundColor: Colors.red));
+      return;
+    }
     setState(() => isSaving = true);
     try {
       String dateStr = thaiBuddhistDate(upcomingDays[selectedDateIndex]);
@@ -53,11 +58,17 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
         int bMin = int.parse(bP[0]) * 60 + int.parse(bP[1]);
         return aMin.compareTo(bMin);
       });
-      await availability.saveTimes(staffUid: FirebaseAuth.instance.currentUser?.uid ?? '', date: dateStr, times: sorted);
+      await availability.saveTimes(staffUid: staffUid, date: dateStr, times: sorted);
       if (mounted) { setState(() => isLocked = true); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('บันทึกเวลาว่างสำหรับ $dateStr แล้ว'), backgroundColor: Colors.green)); }
+    } on FirebaseException catch (e) {
+      debugPrint('Save availability error: ${e.code} ${e.message}');
+      final msg = e.code == 'permission-denied'
+          ? 'ไม่มีสิทธิ์บันทึกเวลาว่างนี้ กรุณาเข้าสู่ระบบใหม่'
+          : 'บันทึกไม่สำเร็จ: ${e.message ?? e.code}';
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
     } catch (e) {
       debugPrint('Save availability error: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อินเทอร์เน็ตขัดข้อง กรุณาตรวจสอบการเชื่อมต่อ'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }

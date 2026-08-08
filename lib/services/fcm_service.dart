@@ -24,7 +24,7 @@ enum NotifDestination { patientQueue, staffQueue, staffSos }
 
 NotifDestination? notificationDestination({required String? role, required String? type}) {
   if (type == null) return null;
-  const patientTargets = {'queue_called', 'morning_reminder', 'booking_cancelled'};
+  const patientTargets = {'queue_called', 'morning_reminder', 'booking_cancelled', 'staff_ping', 'noshow_offer'};
   const staffQueueTargets = {'booking_created', 'booking_cancelled'};
   if (role == 'patient' && patientTargets.contains(type)) return NotifDestination.patientQueue;
   if (role == 'staff' && type == 'sos_new') return NotifDestination.staffSos;

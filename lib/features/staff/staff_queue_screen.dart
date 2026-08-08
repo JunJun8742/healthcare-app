@@ -6,9 +6,11 @@ import 'package:healthcare_app/core/format.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/widgets.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:healthcare_app/services/appointment_service.dart';
 import 'package:healthcare_app/services/queue_slot_service.dart';
 import 'package:healthcare_app/services/notification_service.dart';
+import 'package:healthcare_app/services/staff_notify_service.dart';
 import 'package:healthcare_app/features/patient/notification_screen.dart';
 
 // Staff: Queue Management + MachineStatusCard
@@ -23,6 +25,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
   String searchQuery = '';
   String statusFilter = ''; // '' = ทั้งหมด
   bool _isCustomDay = false;
+  final Set<String> _pingingIds = {}; // docId ที่กำลังส่งแจ้งเตือนอยู่ (กันกดซ้ำ)
   bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
   Widget _dayChip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
@@ -112,6 +115,41 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     ));
   }
 
+  // Manual re-notify — independent of automatic status-change notifications
+  // (onQueueCalled etc.); staff may want to ping a patient who stepped away,
+  // regardless of that card's current status. Server-side role check lives
+  // in the callable itself; this is best-effort UX, not a security boundary.
+  Future<void> _pingPatient(String docId) async {
+    if (_pingingIds.contains(docId)) return;
+    setState(() => _pingingIds.add(docId));
+    try {
+      await staffNotify.pingPatient(docId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('ส่งการแจ้งเตือนแล้ว', style: GoogleFonts.notoSansThai()), backgroundColor: primaryGreen));
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.message ?? 'ส่งการแจ้งเตือนไม่สำเร็จ', style: GoogleFonts.notoSansThai()), backgroundColor: Colors.orange));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('เกิดข้อผิดพลาด: $e', style: GoogleFonts.notoSansThai()), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _pingingIds.remove(docId));
+    }
+  }
+
+  // Manual recovery/kickstart action — the queue normally advances on its own
+  // via functions/autoCallNextOnComplete, but that trigger only fires on a
+  // status TRANSITION (completion/cancellation), so it never fires for the
+  // very first patient of a fresh queue, and staff has no visibility if the
+  // Cloud Function ever errors or lags. The UI only surfaces this button when
+  // waiting > 0 && nothing is currently called/treating — i.e. exactly the
+  // state auto-advance is expected to have already resolved.
   Future<void> _callNext(BuildContext context, List<QueryDocumentSnapshot> docs) async {
     final waiting = docs.where((d) => (d.data() as Map<String, dynamic>)['status'] == QueueStatus.waiting).toList()
       ..sort((a, b) => ((a.data() as Map<String, dynamic>)['queueNo'] ?? '').toString()
@@ -243,10 +281,43 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                   const SizedBox(width: 10),
                   _qStatBlock('เรียกแล้ว', calling, Colors.blue.shade600, Icons.campaign_rounded),
                   const SizedBox(width: 10),
-                  _qStatBlock('กำลังรักษา', treating, Colors.orange.shade700, Icons.medical_services_rounded),
+                  _qStatBlock('รับบริการ', treating, Colors.orange.shade700, Icons.medical_services_rounded),
                 ]),
               ]),
             ),
+            // ── Recovery banner ── shown only when nobody is currently called/
+            // treating despite waiting patients existing: either this is the
+            // very first patient of a fresh queue (autoCallNextOnComplete only
+            // fires on a status transition, so it never kicks off an empty
+            // queue), or the automatic system failed/lagged. Hidden otherwise
+            // so it never competes with the normal auto-advance flow.
+            if (waiting > 0 && calling == 0 && treating == 0 && _isSameDay(selectedDay, DateTime.now()))
+              Container(
+                color: Colors.white,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.info_outline_rounded, color: Colors.amber.shade800, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('มีคิวรออยู่แต่ยังไม่มีใครถูกเรียก — ระบบอัตโนมัติอาจยังไม่ทำงาน กดเพื่อเรียกคิวถัดไปเอง',
+                        style: GoogleFonts.notoSansThai(fontSize: 12.5, color: Colors.amber.shade900, fontWeight: FontWeight.w600))),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                      onPressed: () => _callNext(context, allDocs),
+                      child: Text('เรียกคิว', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                  ]),
+                ),
+              ),
             const Divider(height: 1),
             Container(
               color: Colors.white,
@@ -305,23 +376,6 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
               ]),
             ),
             const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: () => _callNext(context, allDocs),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryGreen,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius)),
-                  ),
-                  icon: const Icon(Icons.campaign_rounded),
-                  label: Text('เรียกคิวถัดไป', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15)),
-                ),
-              ),
-            ),
             Expanded(
               child: docs.isEmpty
                 ? const StateMessage(icon: Icons.inbox_rounded, message: 'ไม่พบคิวตามเงื่อนไขที่เลือก')
@@ -337,23 +391,29 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                       switch (status) {
                         case QueueStatus.called:
                           statusColor = Colors.blue.shade600; sIcon = Icons.campaign_rounded;
-                          btnGrad = [Colors.blue.shade400, Colors.blue.shade700]; btnLabel = 'เริ่มรักษา';
+                          btnGrad = [Colors.blue.shade400, Colors.blue.shade700]; btnLabel = 'เข้ารับบริการแล้ว';
                           btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, QueueStatus.called, QueueStatus.treating);
                           break;
                         case QueueStatus.treating:
                           statusColor = Colors.orange.shade700; sIcon = Icons.medical_services_rounded;
-                          btnGrad = [Colors.green.shade400, const Color(0xff186B44)]; btnLabel = 'เสร็จสิ้น';
+                          btnGrad = [Colors.green.shade400, const Color(0xff186B44)]; btnLabel = 'บริการเสร็จสิ้น';
                           btnAction = () => _completeDialog(context, doc.id, queueNo, patientName, prevNotes: data['notes'] ?? '');
                           break;
                         case QueueStatus.done:
                           statusColor = const Color(0xff4B6358); sIcon = Icons.check_circle_rounded;
-                          btnGrad = [Colors.grey.shade400, Colors.grey.shade600]; btnLabel = 'เสร็จสิ้นแล้ว';
+                          btnGrad = [Colors.grey.shade400, Colors.grey.shade600]; btnLabel = 'บริการเสร็จสิ้นแล้ว';
                           btnAction = null;
                           break;
                         default:
-                          statusColor = primaryGreen; sIcon = Icons.access_time_rounded;
-                          btnGrad = [Colors.blue.shade300, Colors.blue.shade700]; btnLabel = 'เรียกคิว';
-                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, QueueStatus.waiting, QueueStatus.called);
+                          // Waiting cards skip the "เรียกคิว" step entirely from the
+                          // staff's perspective — autoCallNextOnComplete already
+                          // promotes them to เรียกคิว automatically in the normal
+                          // flow (see functions/src/index.ts), so this manual
+                          // override button (for the rare case staff needs to pull
+                          // someone in directly) jumps straight to treating.
+                          statusColor = Colors.blue.shade600; sIcon = Icons.campaign_rounded;
+                          btnGrad = [Colors.blue.shade400, Colors.blue.shade700]; btnLabel = 'เข้ารับบริการแล้ว';
+                          btnAction = () => _changeStatus(context, doc.id, queueNo, patientName, QueueStatus.waiting, QueueStatus.treating);
                       }
                       return Container(
                         margin: const EdgeInsets.only(bottom: 14),
@@ -390,12 +450,28 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                                     const SizedBox(width: 10),
                                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                       Text('คิว ${data['queueNo'] ?? '-'}', style: GoogleFonts.prompt(fontSize: 24, fontWeight: FontWeight.bold, color: textDark, height: 1.1)),
-                                      Container(
-                                        margin: const EdgeInsets.only(top: 2),
-                                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                                        decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
-                                        child: Text(status, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11)),
-                                      ),
+                                      Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                                        Container(
+                                          margin: const EdgeInsets.only(top: 2),
+                                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                          decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
+                                          child: Text(statusInfo(status).label, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11)),
+                                        ),
+                                        if (data['noShowOfferStatus'] == 'pending')
+                                          Container(
+                                            margin: const EdgeInsets.only(top: 2),
+                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                            decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.amber.shade300)),
+                                            child: Text('รอตอบรับมาไวขึ้น', style: GoogleFonts.notoSansThai(color: Colors.amber.shade800, fontWeight: FontWeight.bold, fontSize: 11)),
+                                          ),
+                                        if (data['noShowOfferChosenTime'] != null)
+                                          Container(
+                                            margin: const EdgeInsets.only(top: 2),
+                                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                                            decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(20), border: Border.all(color: primaryGreen.withValues(alpha: 0.3))),
+                                            child: Text('แจ้งว่าจะมา ${data['noShowOfferChosenTime']}', style: GoogleFonts.notoSansThai(color: primaryGreen, fontWeight: FontWeight.bold, fontSize: 11)),
+                                          ),
+                                      ]),
                                     ])),
                                     Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                                       Container(
@@ -423,24 +499,43 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                                     ])),
                                   ]),
                                   const SizedBox(height: 12),
-                                  // Action button full-width
-                                  GestureDetector(
-                                    onTap: btnAction,
-                                    child: Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(colors: btnGrad, begin: Alignment.topLeft, end: Alignment.bottomRight),
-                                        borderRadius: BorderRadius.circular(14),
-                                        boxShadow: [BoxShadow(color: btnGrad.last.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 4))],
+                                  // Action button + separate manual-notify bell
+                                  Row(children: [
+                                    Expanded(child: GestureDetector(
+                                      onTap: btnAction,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(colors: btnGrad, begin: Alignment.topLeft, end: Alignment.bottomRight),
+                                          borderRadius: BorderRadius.circular(14),
+                                          boxShadow: [BoxShadow(color: btnGrad.last.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 4))],
+                                        ),
+                                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                          Icon(sIcon, color: Colors.white, size: 17),
+                                          const SizedBox(width: 8),
+                                          Text(btnLabel, style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                                        ]),
                                       ),
-                                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                        Icon(sIcon, color: Colors.white, size: 17),
-                                        const SizedBox(width: 8),
-                                        Text(btnLabel, style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                                      ]),
-                                    ),
-                                  ),
+                                    )),
+                                    if (QueueStatus.active.contains(status)) ...[
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: () => _pingPatient(doc.id),
+                                        child: Container(
+                                          width: 44, height: 44,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: lightGreen,
+                                            borderRadius: BorderRadius.circular(14),
+                                            border: Border.all(color: primaryGreen.withValues(alpha: 0.3)),
+                                          ),
+                                          child: _pingingIds.contains(doc.id)
+                                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: primaryGreen))
+                                              : const Icon(Icons.notifications_active_rounded, color: primaryGreen, size: 20),
+                                        ),
+                                      ),
+                                    ],
+                                  ]),
                                 ]),
                               )),
                             ]),

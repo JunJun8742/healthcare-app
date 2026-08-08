@@ -21,21 +21,26 @@ service cloud.firestore {
 
     // users/{uid}
     // NOTE: admin accounts cannot be self-created under this rule by design —
-    // admins are provisioned manually via the Firebase console.
+    // admins are provisioned manually via the Firebase console. Staff accounts
+    // are also NOT created via this rule anymore — they're created by the
+    // redeemStaffInvite Cloud Function (Admin SDK, bypasses these rules) so the
+    // invite code never has to be readable by a direct client write attempt.
     match /users/{uid} {
       // Any signed-in user (e.g. a patient browsing BookingScreen's staff
       // picker) may read staff profiles; self/staff/admin reads unchanged.
       allow read: if isSignedIn() && (request.auth.uid == uid || isStaffOrAdmin() || resource.data.role == 'staff');
-      allow create: if isSignedIn() && request.auth.uid == uid && (
-        request.resource.data.role == 'patient' ||
-        (request.resource.data.role == 'staff' &&
-          request.resource.data.inviteCode ==
-            get(/databases/$(database)/documents/settings/staff_invite).data.invite_code)
-      );
+      allow create: if isSignedIn() && request.auth.uid == uid && request.resource.data.role == 'patient';
       allow update: if isSignedIn() && request.auth.uid == uid &&
         request.resource.data.role == resource.data.role;
       allow update: if isAdmin();
-      allow delete: if isAdmin();
+      // Self-service account deletion (PDPA right-to-erasure) — a signed-in
+      // user may always delete their OWN doc, any role. Scoped narrowly to
+      // just this doc; the caller (UserService.deleteOwnAccount) is
+      // responsible for cleaning up the user's own appointments too — see
+      // that rule below. Deliberately does NOT cascade to staff_availability
+      // or other patients' appointments the way admin's deleteUserCascade
+      // does, since a self-service delete must never touch anyone else's data.
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
     }
 
     // appointments/{id}
@@ -50,7 +55,11 @@ service cloud.firestore {
         request.resource.data.status == 'ยกเลิก' &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'cancelledAt', 'cancelledBy']);
       allow update: if isStaffOrAdmin();
-      allow delete: if isAdmin();
+      // Self-service deletion: a patient may delete only their OWN
+      // appointment docs (patientUid match) — never docs where they're only
+      // the staffUid, so a staff account self-deleting can't wipe other
+      // patients' appointment history.
+      allow delete: if isAdmin() || (isSignedIn() && resource.data.patientUid == request.auth.uid);
     }
 
     // queue_days/{dateStr} — global per-day queue-number counter used by the booking
@@ -122,13 +131,14 @@ service cloud.firestore {
       allow write: if request.resource.data.keys().hasOnly(['is_active', 'last_updated']);
     }
 
-    // settings/staff_invite — read during staff signup, before the user is
-    // authenticated, and also validated server-side by the users/{uid} create
-    // rule above. Narrowed to this exact doc (was a wildcard over all of
-    // settings/{id}).
+    // settings/staff_invite — the invite_code value must NEVER be readable by
+    // an unauthenticated or non-admin client (a public read would let anyone
+    // self-register as staff via direct REST access, without ever going
+    // through the app). Validation + redemption now happens exclusively in
+    // the redeemStaffInvite Cloud Function (Admin SDK, bypasses these rules),
+    // so no client write path is needed here at all — admin-only end to end.
     match /settings/staff_invite {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if isAdmin();
     }
 
     // notifications/{id} — push-notification history, written ONLY by Cloud
