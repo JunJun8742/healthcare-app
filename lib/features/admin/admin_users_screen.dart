@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,11 +20,30 @@ class AdminUsersScreen extends StatefulWidget {
 class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerProviderStateMixin {
   late TabController _tab;
   String _search = '';
+  bool _generatingCode = false;
 
   @override
   void initState() { super.initState(); _tab = TabController(length: 2, vsync: this); }
   @override
   void dispose() { _tab.dispose(); super.dispose(); }
+
+  Future<void> _generateCode() async {
+    setState(() => _generatingCode = true);
+    try {
+      final code = await users.generateNewStaffInviteCode();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('สร้างโค้ดใหม่แล้ว: $code', style: GoogleFonts.notoSansThai()), backgroundColor: primaryGreen));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('สร้างโค้ดไม่สำเร็จ: $e', style: GoogleFonts.notoSansThai()), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _generatingCode = false);
+    }
+  }
 
   Future<void> _deleteUser(BuildContext ctx, String uid, String name) async {
     final confirm = await showDialog<bool>(
@@ -93,6 +113,49 @@ class _AdminUsersScreenState extends State<AdminUsersScreen> with SingleTickerPr
                   ),
                 ),
               ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(16), border: Border.all(color: primaryGreen.withValues(alpha: 0.2))),
+                child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: users.staffInviteCodeStream(),
+                  builder: (ctx, snap) {
+                    final code = snap.data?.data()?['invite_code'] as String? ?? '-';
+                    return Row(children: [
+                      Icon(Icons.vpn_key_rounded, color: primaryGreen, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Invite Code สำหรับสมัครเจ้าหน้าที่', style: GoogleFonts.notoSansThai(fontSize: 11, color: primaryGreen.withValues(alpha: 0.8))),
+                        Text(code, style: GoogleFonts.prompt(fontSize: 18, fontWeight: FontWeight.bold, color: textDark, letterSpacing: 1.5)),
+                      ])),
+                      GestureDetector(
+                        onTap: code == '-' ? null : () {
+                          Clipboard.setData(ClipboardData(text: code));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('คัดลอกโค้ดแล้ว', style: GoogleFonts.notoSansThai()), backgroundColor: primaryGreen));
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                          child: const Icon(Icons.copy_rounded, color: primaryGreen, size: 16),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: _generatingCode ? null : _generateCode,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(color: primaryGreen, borderRadius: BorderRadius.circular(10)),
+                          child: _generatingCode
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.refresh_rounded, color: Colors.white, size: 16),
+                        ),
+                      ),
+                    ]);
+                  },
+                ),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),

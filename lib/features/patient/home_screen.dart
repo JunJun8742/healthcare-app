@@ -92,6 +92,7 @@ class HomeScreen extends StatelessWidget {
                         }
                         String qNo = ''; String status = ''; String? activeDocId;
                         String time = ''; String activeStaffUid = ''; String activeDate = '';
+                        String noShowOfferStatus = ''; List<String> noShowOfferOptions = const [];
                         if (snap.hasData && snap.data!.docs.isNotEmpty) {
                           var docs = snap.data!.docs.toList()..sort((a, b) { final ta = a['createdAt'] as Timestamp?; final tb = b['createdAt'] as Timestamp?; if (tb == null) return -1; if (ta == null) return 1; return tb.compareTo(ta); });
                           var latest = docs.first;
@@ -102,86 +103,24 @@ class HomeScreen extends StatelessWidget {
                             time = latest['time'] ?? '';
                             activeStaffUid = latest['staffUid'] ?? '';
                             activeDate = latest['date'] ?? '';
+                            final latestData = latest.data() as Map<String, dynamic>;
+                            noShowOfferStatus = latestData['noShowOfferStatus'] ?? '';
+                            final rawOptions = latestData['noShowOfferOptions'];
+                            if (rawOptions is List) noShowOfferOptions = rawOptions.map((e) => e.toString()).toList();
                           }
                         }
                         final bool hasQueue = qNo.isNotEmpty;
                         final s = statusInfo(status);
                         Color statusColor = s.color;
 
-                        return Container(
-                          clipBehavior: Clip.hardEdge,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [BoxShadow(color: primaryGreen.withValues(alpha: 0.12), blurRadius: 20, offset: const Offset(0, 6))],
-                          ),
-                          child: hasQueue
-                            ? Stack(children: [
-                                // Hospital image right side
-                                Positioned(right: 0, top: 0, bottom: 0, width: 160,
-                                  child: ClipRRect(
-                                    borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
-                                    child: Stack(fit: StackFit.expand, children: [
-                                      Image.asset('assets/Log1.1.png', fit: BoxFit.cover),
-                                      Container(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [Colors.white, Colors.white.withValues(alpha: 0)]),
-                                        ),
-                                      ),
-                                    ]),
-                                  ),
-                                ),
-                                // Content left side
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(20, 20, 170, 20),
-                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w500)),
-                                    const SizedBox(height: 4),
-                                    Text(qNo, style: GoogleFonts.prompt(fontSize: 52, fontWeight: FontWeight.bold, color: primaryGreen, height: 1.1)),
-                                    const SizedBox(height: 12),
-                                    // Status pill
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                                      decoration: BoxDecoration(
-                                        border: Border.all(color: statusColor.withValues(alpha: 0.4)),
-                                        borderRadius: BorderRadius.circular(30),
-                                        color: statusColor.withValues(alpha: 0.06),
-                                      ),
-                                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                        Icon(s.icon, size: 14, color: statusColor),
-                                        const SizedBox(width: 6),
-                                        Text(s.label, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 14)),
-                                      ]),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    if (time.isNotEmpty)
-                                      Row(children: [
-                                        Icon(Icons.schedule_rounded, size: 14, color: Colors.grey.shade500),
-                                        const SizedBox(width: 6),
-                                        Text('นัดเวลา $time', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14)),
-                                      ]),
-                                    if (activeDocId != null && status == QueueStatus.waiting) ...[
-                                      const SizedBox(height: 12),
-                                      GestureDetector(
-                                        onTap: () => _confirmCancel(context, activeDocId!, staffUid: activeStaffUid, date: activeDate, time: time),
-                                        child: Text('ยกเลิกคิว', style: GoogleFonts.notoSansThai(color: Colors.red.shade400, fontSize: 14, decoration: TextDecoration.underline)),
-                                      ),
-                                    ],
-                                  ]),
-                                ),
-                              ])
-                            : Padding(
-                                padding: const EdgeInsets.all(20),
-                                child: Row(children: [
-                                  Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(16)), child: const Icon(Icons.calendar_month_rounded, color: primaryGreen, size: 28)),
-                                  const SizedBox(width: 16),
-                                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text('ยังไม่มีคิว — กดปุ่มด้านล่างเพื่อจองคิวแรกของคุณ', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15, color: textDark)),
-                                  ])),
-                                  Icon(Icons.arrow_forward_ios_rounded, size: 14, color: textSecondary),
-                                ]),
-                              ),
-                        );
+                        if (noShowOfferStatus == 'pending' && activeDocId != null && noShowOfferOptions.isNotEmpty) {
+                          return Column(children: [
+                            NoShowOfferBanner(apptId: activeDocId, options: noShowOfferOptions),
+                            _queueCard(hasQueue, qNo, status, s, statusColor, time, activeDocId, activeStaffUid, activeDate, context),
+                          ]);
+                        }
+
+                        return _queueCard(hasQueue, qNo, status, s, statusColor, time, activeDocId, activeStaffUid, activeDate, context);
                       },
                     ),
                     const SizedBox(height: 20),
@@ -200,23 +139,30 @@ class HomeScreen extends StatelessWidget {
                     Row(children: [
                       Expanded(child: _serviceCard(context, 'กายภาพบำบัด', Icons.accessibility_new_rounded, false, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BookingScreen())))),
                       const SizedBox(width: 12),
-                      Expanded(child: Stack(clipBehavior: Clip.none, children: [
-                        _serviceCard(context, 'แจ้งเตือน', Icons.notifications_rounded, false, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen()))),
-                        Positioned(
-                          top: 8, right: 8,
-                          child: StreamBuilder<QuerySnapshot>(
-                            stream: notifications.unreadProbe(user?.uid),
-                            builder: (context, unreadSnap) {
-                              final hasUnread = unreadSnap.data?.docs.isNotEmpty ?? false;
-                              if (!hasUnread) return const SizedBox.shrink();
-                              return Container(
-                                width: 12, height: 12,
-                                decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
-                              );
-                            },
-                          ),
-                        ),
-                      ])),
+                      Expanded(child: StreamBuilder<QuerySnapshot>(
+                        stream: notifications.unreadProbe(user?.uid),
+                        builder: (context, unreadSnap) {
+                          final unreadCount = unreadSnap.data?.docs.length ?? 0;
+                          final countLabel = unreadCount > 9 ? '9+' : '$unreadCount';
+                          return _serviceCard(
+                            context, 'แจ้งเตือน', Icons.notifications_rounded, false,
+                            () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
+                            badge: unreadCount > 0
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade600,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: Colors.white, width: 2.5),
+                                      boxShadow: [BoxShadow(color: Colors.red.withValues(alpha: 0.4), blurRadius: 6, offset: const Offset(0, 2))],
+                                    ),
+                                    child: Center(child: Text(countLabel, style: GoogleFonts.notoSansThai(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, height: 1))),
+                                  )
+                                : null,
+                          );
+                        },
+                      )),
                       const SizedBox(width: 12),
                       Expanded(child: _serviceCard(context, 'แจ้งเหตุฉุกเฉิน', Icons.sos_rounded, true, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SOSScreen())))),
                     ]),
@@ -228,6 +174,115 @@ class HomeScreen extends StatelessWidget {
           );
         },
       ),
+    );
+  }
+
+  Widget _queueCard(bool hasQueue, String qNo, String status, ({Color color, IconData icon, String label}) s, Color statusColor,
+      String time, String? activeDocId, String activeStaffUid, String activeDate, BuildContext context) {
+    return Container(
+      clipBehavior: Clip.hardEdge,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: primaryGreen.withValues(alpha: 0.12), blurRadius: 20, offset: const Offset(0, 6))],
+      ),
+      child: hasQueue
+        ? Stack(children: [
+            // Hospital image right side
+            Positioned(right: 0, top: 0, bottom: 0, width: 160,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
+                child: Stack(fit: StackFit.expand, children: [
+                  Image.asset('assets/Log1.1.png', fit: BoxFit.cover),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [Colors.white, Colors.white.withValues(alpha: 0)]),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+            // Content left side
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 170, 20),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 4),
+                Text(qNo, style: GoogleFonts.prompt(fontSize: 52, fontWeight: FontWeight.bold, color: primaryGreen, height: 1.1)),
+                const SizedBox(height: 12),
+                // Status pill
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: statusColor.withValues(alpha: 0.4)),
+                    borderRadius: BorderRadius.circular(30),
+                    color: statusColor.withValues(alpha: 0.06),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(s.icon, size: 14, color: statusColor),
+                    const SizedBox(width: 6),
+                    Text(s.label, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 14)),
+                  ]),
+                ),
+                const SizedBox(height: 12),
+                if (time.isNotEmpty)
+                  Row(children: [
+                    Icon(Icons.schedule_rounded, size: 14, color: Colors.grey.shade500),
+                    const SizedBox(width: 6),
+                    Text('นัดเวลา $time', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 14)),
+                  ]),
+                if (activeDocId != null && status == QueueStatus.waiting) ...[
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: () => _confirmCancel(context, activeDocId, staffUid: activeStaffUid, date: activeDate, time: time),
+                    child: Text('ยกเลิกคิว', style: GoogleFonts.notoSansThai(color: Colors.red.shade400, fontSize: 14, decoration: TextDecoration.underline)),
+                  ),
+                ],
+              ]),
+            ),
+          ])
+        : Stack(children: [
+            // Hospital image right side — same as the has-queue state, so the
+            // empty state doesn't look like a completely different widget.
+            Positioned(right: 0, top: 0, bottom: 0, width: 160,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
+                child: Stack(fit: StackFit.expand, children: [
+                  Image.asset('assets/Log1.1.png', fit: BoxFit.cover),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [Colors.white, Colors.white.withValues(alpha: 0)]),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+            // Content left side
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 170, 20),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w500)),
+                const SizedBox(height: 4),
+                Text('ไม่มีคิว', style: GoogleFonts.prompt(fontSize: 36, fontWeight: FontWeight.bold, color: Colors.grey.shade400, height: 1.1)),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: primaryGreen.withValues(alpha: 0.4)),
+                    borderRadius: BorderRadius.circular(30),
+                    color: primaryGreen.withValues(alpha: 0.06),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.event_available_rounded, size: 14, color: primaryGreen),
+                    const SizedBox(width: 6),
+                    Text('พร้อมให้บริการ', style: GoogleFonts.notoSansThai(color: primaryGreen, fontWeight: FontWeight.bold, fontSize: 14)),
+                  ]),
+                ),
+                const SizedBox(height: 12),
+                Text('กดปุ่มด้านล่างเพื่อจองคิวแรกของคุณ', style: GoogleFonts.notoSansThai(color: textSecondary, fontSize: 13)),
+              ]),
+            ),
+          ]),
     );
   }
 
@@ -295,7 +350,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _serviceCard(BuildContext ctx, String title, IconData icon, bool isSOS, VoidCallback onTap) {
+  Widget _serviceCard(BuildContext ctx, String title, IconData icon, bool isSOS, VoidCallback onTap, {Widget? badge}) {
     final List<Color> iconColors = isSOS
         ? [Colors.red.shade300, Colors.red.shade700]
         : [const Color(0xff52b788), const Color(0xff186B44)];
@@ -312,7 +367,12 @@ class HomeScreen extends StatelessWidget {
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.07), blurRadius: 14, offset: const Offset(0, 5))],
         ),
         child: Column(children: [
-          icon3D(icon, iconColors, 58),
+          // Badge anchored to the icon bubble itself (not the whole card) so it
+          // visually sits on the bell, not floating in the card's padding.
+          Stack(clipBehavior: Clip.none, children: [
+            icon3D(icon, iconColors, 58),
+            if (badge != null) Positioned(top: -6, right: -6, child: badge),
+          ]),
           const SizedBox(height: 10),
           // 13px is the single allowed exception to the 14px minimum: 3-column layout, label duplicated by icon above.
           Text(title, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, fontSize: 13, color: textDark), textAlign: TextAlign.center),

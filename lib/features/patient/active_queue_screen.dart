@@ -60,6 +60,15 @@ class ActiveQueueScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
                 child: Column(children: [
 
+                  // ===== No-show offer banner (คิวก่อนหน้าไม่มาตามนัด — สนใจมาไวขึ้นไหม) =====
+                  if (data['noShowOfferStatus'] == 'pending' && data['noShowOfferOptions'] is List && (data['noShowOfferOptions'] as List).isNotEmpty) ...[
+                    NoShowOfferBanner(
+                      apptId: latest.id,
+                      options: (data['noShowOfferOptions'] as List).map((e) => e.toString()).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // ===== Queue Card (same style as HomeScreen) =====
                   Container(
                     clipBehavior: Clip.hardEdge,

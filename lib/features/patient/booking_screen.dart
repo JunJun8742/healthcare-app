@@ -35,8 +35,8 @@ class _BookingScreenState extends State<BookingScreen> {
 
   String get _missingHint {
     if (loadingStaff || loadingTimes) return 'กำลังโหลดข้อมูล...';
-    if (staffList.isEmpty) return 'ยังไม่มีเจ้าหน้าที่ให้เลือก';
     if (availableTimes.isEmpty) return 'ไม่มีเวลาว่างในวันนี้ กรุณาเลือกวันอื่น';
+    if (staffList.isEmpty) return 'ยังไม่มีเจ้าหน้าที่ให้เลือก';
     if (selectedMachineId == null) return 'กรุณาเลือกเครื่องที่ใช้';
     return '';
   }
@@ -252,9 +252,42 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             const SizedBox(height: kGapXL),
 
-            // ── Step 2: นักกายภาพ ──
+            // ── Step 2: เวลา ──
             _bookingCard(
-              step: 2, icon: Icons.person_rounded, title: '2. เลือกนักกายภาพ',
+              step: 2, icon: Icons.access_time_rounded, title: '2. เลือกเวลา',
+              child: loadingTimes
+                ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: primaryGreen)))
+                : availableTimes.isEmpty
+                  ? _infoBox('ไม่มีช่วงเวลาที่เปิดในวันนี้', Colors.orange)
+                  : GridView.builder(
+                      shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 1.7, crossAxisSpacing: 10, mainAxisSpacing: 10),
+                      itemCount: availableTimes.length,
+                      itemBuilder: (_, i) {
+                        bool isSel = i == selectedTimeIndex;
+                        String time = availableTimes[i];
+                        return GestureDetector(
+                          onTap: () => setState(() => selectedTimeIndex = i),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            constraints: const BoxConstraints(minHeight: 48),
+                            decoration: BoxDecoration(
+                              color: isSel ? primaryGreen : Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: isSel ? null : Border.all(color: lightGreen),
+                              boxShadow: isSel ? [BoxShadow(color: primaryGreen.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 3))] : [],
+                            ),
+                            child: Center(child: Text(time, style: GoogleFonts.prompt(fontWeight: FontWeight.bold, fontSize: 15, color: isSel ? Colors.white : textDark))),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            const SizedBox(height: kGapXL),
+
+            // ── Step 3: นักกายภาพ ──
+            _bookingCard(
+              step: 3, icon: Icons.person_rounded, title: '3. เลือกนักกายภาพ',
               child: loadingStaff
                 ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: primaryGreen)))
                 : staffList.isEmpty
@@ -302,9 +335,9 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             const SizedBox(height: kGapXL),
 
-            // ── Step 3: เครื่อง ──
+            // ── Step 4: เครื่อง ──
             _bookingCard(
-              step: 3, icon: Icons.computer_rounded, title: '3. เลือกเครื่องที่ใช้',
+              step: 4, icon: Icons.computer_rounded, title: '4. เลือกเครื่องที่ใช้',
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance.collection('machine_status').snapshots(),
                 builder: (context, machineSnap) {
@@ -363,39 +396,6 @@ class _BookingScreenState extends State<BookingScreen> {
                   }).toList());
                 },
               ),
-            ),
-            const SizedBox(height: kGapXL),
-
-            // ── Step 4: เวลา ──
-            _bookingCard(
-              step: 4, icon: Icons.access_time_rounded, title: '4. เลือกเวลา',
-              child: loadingTimes
-                ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: primaryGreen)))
-                : availableTimes.isEmpty
-                  ? _infoBox('ไม่มีช่วงเวลาที่เปิดในวันนี้', Colors.orange)
-                  : GridView.builder(
-                      shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, childAspectRatio: 1.7, crossAxisSpacing: 10, mainAxisSpacing: 10),
-                      itemCount: availableTimes.length,
-                      itemBuilder: (_, i) {
-                        bool isSel = i == selectedTimeIndex;
-                        String time = availableTimes[i];
-                        return GestureDetector(
-                          onTap: () => setState(() => selectedTimeIndex = i),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            constraints: const BoxConstraints(minHeight: 48),
-                            decoration: BoxDecoration(
-                              color: isSel ? primaryGreen : Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: isSel ? null : Border.all(color: lightGreen),
-                              boxShadow: isSel ? [BoxShadow(color: primaryGreen.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 3))] : [],
-                            ),
-                            child: Center(child: Text(time, style: GoogleFonts.prompt(fontWeight: FontWeight.bold, fontSize: 15, color: isSel ? Colors.white : textDark))),
-                          ),
-                        );
-                      },
-                    ),
             ),
 
           ]),

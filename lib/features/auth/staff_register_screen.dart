@@ -1,9 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:healthcare_app/core/theme.dart';
-import 'package:healthcare_app/services/user_service.dart';
+import 'package:healthcare_app/services/staff_invite_service.dart';
 
 // ==========================================
 // 3. Staff Register Screen (ใหม่)
@@ -31,36 +31,40 @@ class _StaffRegisterScreenState extends State<StaffRegisterScreen> {
     if (passCtrl.text.length < 6) { _snack('รหัสผ่านต้องมีอย่างน้อย 6 ตัว'); return; }
 
     setState(() => loading = true);
+    UserCredential? cred;
     try {
-      // ตรวจ invite code
-      String? correctCode = await users.fetchStaffInviteCode();
-      if (correctCode == null) { _snack('ระบบ Invite Code ยังไม่ได้ตั้งค่า กรุณาติดต่อผู้ดูแลระบบ'); return; }
-      if (inviteCtrl.text.trim() != correctCode) { _snack('Invite Code ไม่ถูกต้อง กรุณาติดต่อผู้ดูแลระบบ'); return; }
-
-      // สร้างบัญชี
-      UserCredential cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+      // สร้างบัญชี Auth ก่อน แล้วค่อย "เผา" invite code แบบ transaction — ถ้า
+      // โค้ดถูกใช้ไปแล้ว/ไม่ตรง จะ throw แล้วลบบัญชี Auth ที่เพิ่งสร้างทิ้งด้านล่าง
+      cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: emailCtrl.text.trim(), password: passCtrl.text.trim(),
       );
-      await FirebaseFirestore.instance.collection('users').doc(cred.user!.uid).set({
-        'uid': cred.user!.uid,
-        'fullname': fullnameCtrl.text.trim(),
-        'email': emailCtrl.text.trim(),
-        'role': 'staff',
-        'specialization': specCtrl.text.trim(),
-        'inviteCode': inviteCtrl.text.trim(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      await staffInviteService.redeem(
+        code: inviteCtrl.text.trim(),
+        fullname: fullnameCtrl.text.trim(),
+        email: emailCtrl.text.trim(),
+        specialization: specCtrl.text.trim(),
+      );
+      // Best-effort — don't block signup if this fails.
+      unawaited(cred.user!.sendEmailVerification().catchError((_) {}));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('สมัครบัญชีนักกายภาพสำเร็จ!'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('สมัครบัญชีนักกายภาพสำเร็จ! เราส่งอีเมลยืนยันไปแล้ว (เช็คโฟลเดอร์สแปมด้วยถ้าไม่เจอ)'),
+          backgroundColor: Colors.green,
+        ));
         Navigator.pop(context);
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) _snack(e.message ?? 'เกิดข้อผิดพลาด');
+    } on StaffInviteCodeInvalidException {
+      await cred?.user?.delete();
+      if (mounted) _snack('Invite Code ไม่ถูกต้องหรือถูกใช้ไปแล้ว กรุณาติดต่อผู้ดูแลระบบเพื่อขอโค้ดใหม่');
     } on FirebaseException catch (e) {
-      if (mounted) _snack('อ่านข้อมูล Invite Code ไม่สำเร็จ (${e.code}) กรุณาตรวจสอบสิทธิ์การเข้าถึง Firestore');
+      await cred?.user?.delete();
+      if (mounted) _snack('สมัครบัญชีไม่สำเร็จ (${e.code}) กรุณาลองใหม่');
     } catch (e) {
       debugPrint('Staff register error: $e');
+      await cred?.user?.delete();
       if (mounted) _snack('เกิดข้อผิดพลาด กรุณาลองใหม่');
     } finally {
       if (mounted) setState(() => loading = false);

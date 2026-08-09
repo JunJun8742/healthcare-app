@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:healthcare_app/core/theme.dart';
+import 'package:healthcare_app/services/noshow_offer_service.dart';
 
 // ===== Empty/Error state ที่ใช้ร่วมกัน =====
 class StateMessage extends StatelessWidget {
@@ -182,6 +185,158 @@ class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderState
           shape: BoxShape.circle,
         ),
       ),
+    );
+  }
+}
+
+// ==========================================
+// No-show offer banner — คิวก่อนหน้าไม่มาตามนัดเกิน 10 นาทีแล้วถูกยกเลิกอัตโนมัติ
+// เสนอให้คิวถัดไปเลือกเวลาที่สะดวกมาเร็วขึ้น (ไม่มีการสลับคิว/เวลาใดๆ — แค่บันทึก
+// เจตนา ให้ staff เห็นว่าคนไข้แจ้งว่าจะมาเวลาไหน)
+// ==========================================
+class NoShowOfferBanner extends StatefulWidget {
+  final String apptId;
+  final List<String> options;
+  const NoShowOfferBanner({super.key, required this.apptId, required this.options});
+
+  @override
+  State<NoShowOfferBanner> createState() => _NoShowOfferBannerState();
+}
+
+class _NoShowOfferBannerState extends State<NoShowOfferBanner> {
+  bool _loading = false;
+
+  Future<void> _respond(String? chosenTime) async {
+    setState(() => _loading = true);
+    try {
+      await noShowOfferService.respond(apptId: widget.apptId, chosenTime: chosenTime);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(chosenTime != null ? 'แจ้งเจ้าหน้าที่แล้วว่าจะมาเวลา $chosenTime' : 'บันทึกว่าไม่สะดวกแล้ว', style: GoogleFonts.notoSansThai()),
+          backgroundColor: chosenTime != null ? primaryGreen : Colors.grey.shade600,
+        ));
+      }
+    } on FirebaseFunctionsException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.message ?? 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่', style: GoogleFonts.notoSansThai()),
+          backgroundColor: Colors.orange,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e', style: GoogleFonts.notoSansThai()), backgroundColor: Colors.red));
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: kGapL),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xff52b788), Color(0xff186B44)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: primaryGreen.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.directions_walk_rounded, color: Colors.white, size: 20)),
+          const SizedBox(width: 10),
+          Expanded(child: Text('สนใจเข้ารับบริการไวขึ้นไหม?', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15))),
+        ]),
+        const SizedBox(height: 8),
+        Text('คิวก่อนหน้าไม่มาตามนัด สะดวกมาเวลาไหนแจ้งเจ้าหน้าที่ได้เลย', style: GoogleFonts.notoSansThai(color: Colors.white.withValues(alpha: 0.95), fontSize: 13)),
+        const SizedBox(height: 14),
+        Row(children: [
+          for (final t in widget.options) ...[
+            Expanded(child: ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: primaryGreen, padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius))),
+              onPressed: _loading ? null : () => _respond(t),
+              child: Text(t, style: GoogleFonts.prompt(fontWeight: FontWeight.bold)),
+            )),
+            const SizedBox(width: 8),
+          ],
+          Expanded(child: OutlinedButton(
+            style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.white), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kRadius))),
+            onPressed: _loading ? null : () => _respond(null),
+            child: _loading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Text('ไม่สนใจ', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+          )),
+        ]),
+      ]),
+    );
+  }
+}
+
+// ===== แถบเตือนยืนยันอีเมล =====
+// ไม่บล็อกการใช้งาน — แค่เตือน + ให้กด "ส่งอีกครั้ง" ได้ ปิดได้ทันที (state
+// อยู่แค่ระดับ widget เดียวนี้ ไม่ persist — เปิดหน้าใหม่จะเห็นอีกจนกว่าจะยืนยัน)
+class EmailVerificationBanner extends StatefulWidget {
+  const EmailVerificationBanner({super.key});
+  @override
+  State<EmailVerificationBanner> createState() => _EmailVerificationBannerState();
+}
+
+class _EmailVerificationBannerState extends State<EmailVerificationBanner> {
+  bool _dismissed = false;
+  bool _sending = false;
+
+  Future<void> _resend() async {
+    setState(() => _sending = true);
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      await user.sendEmailVerification();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ส่งอีเมลยืนยันแล้ว กรุณาตรวจสอบกล่องจดหมาย (รวมถึงโฟลเดอร์สแปม)', style: GoogleFonts.notoSansThai()), backgroundColor: primaryGreen));
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        final msg = e.code == 'too-many-requests'
+            ? 'ส่งไปแล้วเมื่อครู่นี้ — รออีกสักครู่แล้วเช็คสแปมก่อนกดส่งซ้ำ'
+            : 'ส่งไม่สำเร็จ (${e.code}) ลองใหม่ภายหลัง';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: GoogleFonts.notoSansThai()), backgroundColor: Colors.orange));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('ส่งไม่สำเร็จ ลองใหม่ภายหลัง', style: GoogleFonts.notoSansThai()), backgroundColor: Colors.orange));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (_dismissed || user == null || user.emailVerified) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: kGapL),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.amber.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.amber.shade200),
+      ),
+      child: Row(children: [
+        Icon(Icons.mark_email_unread_rounded, color: Colors.amber.shade800, size: 20),
+        const SizedBox(width: 10),
+        Expanded(child: Text('กรุณายืนยันอีเมลของคุณเพื่อความปลอดภัยของบัญชี (เช็คโฟลเดอร์สแปมด้วยถ้าไม่เจอ)', style: GoogleFonts.notoSansThai(fontSize: 12.5, color: Colors.amber.shade900, fontWeight: FontWeight.w600))),
+        _sending
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber))
+            : TextButton(onPressed: _resend, style: TextButton.styleFrom(minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)), child: Text('ส่งอีกครั้ง', style: GoogleFonts.notoSansThai(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.amber.shade900))),
+        IconButton(
+          icon: Icon(Icons.close_rounded, size: 16, color: Colors.amber.shade700),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          onPressed: () => setState(() => _dismissed = true),
+        ),
+      ]),
     );
   }
 }
