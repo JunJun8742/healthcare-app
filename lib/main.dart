@@ -17,7 +17,9 @@ Future<void> main() async {
   // Firestore/Functions but must not block app startup if it fails to init.
   try {
     await FirebaseAppCheck.instance.activate(
-      providerAndroid: kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+      providerAndroid: kDebugMode
+          ? const AndroidDebugProvider()
+          : const AndroidPlayIntegrityProvider(),
     );
   } catch (e) {
     debugPrint('App Check activate error: $e');
@@ -29,7 +31,9 @@ Future<void> main() async {
   // outside the Flutter framework are both routed to Crashlytics; runZoned
   // catches the latter (PlatformDispatcher.onError alone misses some Dart
   // isolate errors on older engines).
-  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+  await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(
+    !kDebugMode,
+  );
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
   PlatformDispatcher.instance.onError = (error, stack) {
     FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
@@ -39,6 +43,7 @@ Future<void> main() async {
   await initFcmBootstrap(onNotificationTap: routeFromNotification);
   runZonedGuarded(
     () => runApp(const HealthcareStation()),
-    (error, stack) => FirebaseCrashlytics.instance.recordError(error, stack, fatal: true),
+    (error, stack) =>
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true),
   );
 }

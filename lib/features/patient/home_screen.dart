@@ -189,7 +189,7 @@ class HomeScreen extends StatelessWidget {
       child: hasQueue
         ? Stack(children: [
             // Hospital image right side
-            Positioned(right: 0, top: 0, bottom: 0, width: 160,
+            Positioned(right: 0, top: 0, bottom: 0, width: 150,
               child: ClipRRect(
                 borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
                 child: Stack(fit: StackFit.expand, children: [
@@ -204,7 +204,7 @@ class HomeScreen extends StatelessWidget {
             ),
             // Content left side
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 170, 20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 148, 20),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w500)),
                 const SizedBox(height: 4),
@@ -244,7 +244,7 @@ class HomeScreen extends StatelessWidget {
         : Stack(children: [
             // Hospital image right side — same as the has-queue state, so the
             // empty state doesn't look like a completely different widget.
-            Positioned(right: 0, top: 0, bottom: 0, width: 160,
+            Positioned(right: 0, top: 0, bottom: 0, width: 150,
               child: ClipRRect(
                 borderRadius: const BorderRadius.only(topRight: Radius.circular(24), bottomRight: Radius.circular(24)),
                 child: Stack(fit: StackFit.expand, children: [
@@ -259,7 +259,7 @@ class HomeScreen extends StatelessWidget {
             ),
             // Content left side
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 170, 20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 148, 20),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('คิวของคุณวันนี้', style: GoogleFonts.notoSansThai(fontSize: 14, color: textSecondary, fontWeight: FontWeight.w500)),
                 const SizedBox(height: 4),

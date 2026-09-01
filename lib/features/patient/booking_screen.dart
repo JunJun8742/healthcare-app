@@ -128,7 +128,10 @@ class _BookingScreenState extends State<BookingScreen> {
               const SizedBox(width: kGapM),
               Text(label, style: tCaption()),
               const Spacer(),
-              Flexible(child: Text(value, style: GoogleFonts.notoSansThai(fontSize: 16, fontWeight: FontWeight.w600, color: textDark), textAlign: TextAlign.end)),
+              Flexible(child: FittedBox(
+          fit: BoxFit.scaleDown, alignment: Alignment.centerRight,
+          child: Text(value, maxLines: 1, style: GoogleFonts.notoSansThai(fontSize: 16, fontWeight: FontWeight.w600, color: textDark)),
+        )),
             ]),
           );
           return Padding(
@@ -487,7 +490,10 @@ class BookingSuccessScreen extends StatelessWidget {
         const SizedBox(width: kGapM),
         Text(label, style: tCaption()),
         const Spacer(),
-        Flexible(child: Text(value, style: GoogleFonts.notoSansThai(fontSize: 16, fontWeight: FontWeight.w600, color: textDark), textAlign: TextAlign.end)),
+        Flexible(child: FittedBox(
+          fit: BoxFit.scaleDown, alignment: Alignment.centerRight,
+          child: Text(value, maxLines: 1, style: GoogleFonts.notoSansThai(fontSize: 16, fontWeight: FontWeight.w600, color: textDark)),
+        )),
       ]),
     );
     return Scaffold(
