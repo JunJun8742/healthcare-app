@@ -68,7 +68,11 @@ class _StaffAvailabilityScreenState extends State<StaffAvailabilityScreen> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
     } catch (e) {
       debugPrint('Save availability error: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red));
+      // แยกข้อความตามสาเหตุจริง — permission-denied ไม่ใช่ปัญหาอินเทอร์เน็ต
+      final msg = (e is FirebaseException && e.code == 'permission-denied')
+        ? 'บันทึกไม่สำเร็จ: ไม่มีสิทธิ์เขียนข้อมูล กรุณาออกจากระบบแล้วเข้าใหม่'
+        : 'บันทึกไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่';
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => isSaving = false);
     }

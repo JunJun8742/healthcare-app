@@ -5,14 +5,10 @@ class AvailabilityService {
   AvailabilityService({FirebaseFirestore? db}) : _db = db ?? FirebaseFirestore.instance;
   final FirebaseFirestore _db;
 
-  // MUST sanitize '/' out of the date: CollectionReference.doc(path) parses
-  // '/' as a path separator, so a raw Thai date (dd/MM/yyyy) here silently
-  // writes into a nested subcollection instead of a flat staff_availability
-  // doc — that unmatched path has no security-rules match, so every write
-  // fails as "permission-denied" even though the rule for staff_availability
-  // itself is correct. (Previously documented as intentionally un-sanitized —
-  // that was the bug, not a design choice; queue_slots' dateKey sanitization
-  // was correct all along.)
+  // staff_availability doc IDs sanitize '/' -> '-' just like queue_slots'
+  // dateKey — a literal '/' in a Firestore .doc() path is a path separator,
+  // not a character, so it silently nests the write into a subcollection
+  // and bypasses the flat `staff_availability/{id}` security rule entirely.
   String docId({required String staffUid, required String date}) => '${staffUid}_${queueSlotDateKey(date)}';
 
   /// อ่านเวลาว่างของเจ้าหน้าที่จาก staff_availability — ใช้โดย BookingScreen
