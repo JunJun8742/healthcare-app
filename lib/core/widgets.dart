@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:healthcare_app/core/machines.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/services/noshow_offer_service.dart';
 
@@ -54,20 +55,11 @@ class MachineStatusCard extends StatelessWidget {
       stream: FirebaseFirestore.instance.collection('machine_status').doc(machineId).snapshots(),
       builder: (context, snap) {
         bool? isActive;
-        Timestamp? lastUpdated;
+        DateTime? lastUpdated;
         if (snap.hasData && snap.data!.exists) {
           final data = snap.data!.data() as Map<String, dynamic>;
           isActive = data['is_active'] as bool?;
-          lastUpdated = data['last_updated'] as Timestamp?;
-        }
-
-        const timeoutSeconds = 30;
-        bool isStale = false;
-        if (lastUpdated != null) {
-          final age = DateTime.now().difference(lastUpdated.toDate());
-          if (age.inSeconds >= timeoutSeconds) isStale = true;
-        } else if (snap.hasData && snap.data!.exists) {
-          isStale = true;
+          lastUpdated = (data['last_updated'] as Timestamp?)?.toDate();
         }
 
         Color statusColor;
@@ -82,36 +74,32 @@ class MachineStatusCard extends StatelessWidget {
           statusIcon = Icons.hourglass_empty;
           statusText = 'กำลังตรวจสอบ...';
           statusSub = 'กรุณารอสักครู่';
-        } else if (isStale) {
-          statusColor = Colors.orange;
-          bgColor = Colors.orange.shade50;
-          statusIcon = Icons.signal_wifi_statusbar_connected_no_internet_4;
-          statusText = 'ไม่ทราบสถานะ';
-          statusSub = 'ไม่มีสัญญาณจากเครื่องนานกว่า $timeoutSeconds วินาที';
-        } else if (isActive == null) {
-          statusColor = Colors.orange;
-          bgColor = Colors.orange.shade50;
-          statusIcon = Icons.signal_wifi_statusbar_connected_no_internet_4;
-          statusText = 'ไม่ทราบสถานะ';
-          statusSub = 'ไม่พบข้อมูลจากเครื่อง';
-        } else if (isActive) {
-          statusColor = primaryGreen;
-          bgColor = lightGreen;
-          statusIcon = Icons.play_circle_fill;
-          statusText = 'เครื่องกำลังทำงาน';
-          statusSub = 'อยู่ระหว่างการให้บริการ';
         } else {
-          statusColor = Colors.grey.shade600;
-          bgColor = Colors.grey.shade100;
-          statusIcon = Icons.pause_circle_filled;
-          statusText = 'เครื่องว่างอยู่';
-          statusSub = 'พร้อมให้บริการ';
+          switch (machineStateFor(isActive: isActive, lastUpdated: lastUpdated)) {
+            case MachineState.unknown:
+              statusColor = Colors.orange;
+              bgColor = Colors.orange.shade50;
+              statusIcon = Icons.signal_wifi_statusbar_connected_no_internet_4;
+              statusText = 'ไม่ทราบข้อมูล';
+              statusSub = lastUpdated == null ? 'ไม่พบข้อมูลจากเครื่อง' : 'ไม่มีสัญญาณจากเครื่องนานกว่า 30 วินาที';
+            case MachineState.online:
+              statusColor = Colors.blue.shade600;
+              bgColor = Colors.blue.shade50;
+              statusIcon = Icons.wifi_rounded;
+              statusText = 'ออนไลน์';
+              statusSub = 'เชื่อมต่ออยู่ พร้อมให้บริการ';
+            case MachineState.inUse:
+              statusColor = primaryGreen;
+              bgColor = lightGreen;
+              statusIcon = Icons.play_circle_fill;
+              statusText = 'กำลังใช้งาน';
+              statusSub = 'อยู่ระหว่างการให้บริการ';
+          }
         }
 
         String timeStr = '';
         if (lastUpdated != null) {
-          final dt = lastUpdated.toDate();
-          timeStr = 'อัปเดต: ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} น.';
+          timeStr = 'อัปเดต: ${lastUpdated.hour.toString().padLeft(2, '0')}:${lastUpdated.minute.toString().padLeft(2, '0')} น.';
         }
 
         return Container(
@@ -185,6 +173,91 @@ class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderState
           shape: BoxShape.circle,
         ),
       ),
+    );
+  }
+}
+
+// ==========================================
+// Machine Overview — สรุปเครื่องทั้งหมด (จากรายชื่อตายตัวใน core/machines.dart)
+// จัดกลุ่มตาม MachineState แต่ละเครื่องแตะเพื่อดูรายละเอียด (MachineStatusCard)
+// ==========================================
+class MachineOverviewSection extends StatelessWidget {
+  const MachineOverviewSection({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (knownMachines.isEmpty) return const SizedBox.shrink();
+    final ids = knownMachines.map((m) => m.id).toList();
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('machine_status').where(FieldPath.documentId, whereIn: ids).snapshots(),
+      builder: (context, snap) {
+        final dataById = <String, Map<String, dynamic>>{};
+        if (snap.hasData) {
+          for (final doc in snap.data!.docs) {
+            dataById[doc.id] = doc.data() as Map<String, dynamic>;
+          }
+        }
+
+        final inUse = <({String id, String name})>[];
+        final online = <({String id, String name})>[];
+        final unknown = <({String id, String name})>[];
+        for (final m in knownMachines) {
+          final data = dataById[m.id];
+          final state = machineStateFor(
+            isActive: data?['is_active'] as bool?,
+            lastUpdated: (data?['last_updated'] as Timestamp?)?.toDate(),
+          );
+          switch (state) {
+            case MachineState.inUse: inUse.add(m);
+            case MachineState.online: online.add(m);
+            case MachineState.unknown: unknown.add(m);
+          }
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: lightGreen),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.computer_rounded, color: primaryGreen, size: 18),
+              const SizedBox(width: 8),
+              Text('สถานะเครื่อง', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 14, color: textDark)),
+            ]),
+            const SizedBox(height: 12),
+            _machineGroup(context, 'กำลังใช้งาน', primaryGreen, inUse),
+            _machineGroup(context, 'ออนไลน์', Colors.blue.shade600, online),
+            _machineGroup(context, 'ไม่ทราบข้อมูล', Colors.orange.shade700, unknown, isLast: true),
+          ]),
+        );
+      },
+    );
+  }
+
+  Widget _machineGroup(BuildContext context, String label, Color color, List<({String id, String name})> machines, {bool isLast = false}) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: isLast ? 0 : 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('$label (${machines.length})', style: GoogleFonts.notoSansThai(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+        const SizedBox(height: 6),
+        machines.isEmpty
+            ? Text('—', style: GoogleFonts.notoSansThai(fontSize: 12, color: Colors.grey.shade400))
+            : Wrap(spacing: 8, runSpacing: 8, children: machines.map((m) => ActionChip(
+                label: Text(m.name, style: GoogleFonts.notoSansThai(fontSize: 12.5, color: color, fontWeight: FontWeight.w600)),
+                backgroundColor: color.withValues(alpha: 0.1),
+                side: BorderSide(color: color.withValues(alpha: 0.3)),
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => Dialog(
+                    backgroundColor: Colors.transparent,
+                    child: MachineStatusCard(machineId: m.id, machineName: m.name),
+                  ),
+                ),
+              )).toList()),
+      ]),
     );
   }
 }

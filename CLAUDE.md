@@ -71,7 +71,8 @@ lib/
     format.dart              # thaiBuddhistDate, queueSlotDateKey, relativeTimeTh,
                              #   isMachineStale, compareCreatedAtDesc
     photo.dart               # encodePhotoBase64 / tryDecodePhotoBase64
-    widgets.dart             # StateMessage, MachineStatusCard, icon3D
+    widgets.dart             # StateMessage, MachineStatusCard, MachineOverviewSection, icon3D
+    machines.dart            # knownMachines (fixed id/name list), MachineState enum, machineStateFor()
   services/                  # all Firestore/FCM I/O; classes take {FirebaseFirestore? db}
                              #   defaulting to .instance (inject fake_cloud_firestore in tests);
                              #   each file ends with a shared instance (queueSlots, availability,
@@ -142,7 +143,7 @@ Use `.withValues(alpha: ...)` instead of the deprecated `.withOpacity(...)`.
 | `queue_slots` | Per-staff time-slot locks | doc ID = `{staffUid}_{dateKey}`, fields: `staffUid`, `date`, `bookedTimes: {time: apptId \| false}` |
 | `sos_alerts` | Emergency alerts | `patientUid`, `patientName`, `issue`, `status`, `createdAt`, `resolvedAt` |
 | `staff_availability` | Staff working hours | doc ID = `{staffUid}_{date}`, fields: `staffUid`, `date`, `times: List<String>`, `updatedAt` |
-| `machine_status` | ESP32 heartbeat (per machine) | doc ID = machine ID (e.g. `current`), fields: `is_active: bool`, `last_updated: Timestamp` |
+| `machine_status` | ESP32 heartbeat (per machine) | doc ID = machine ID (must match one of `core/machines.dart`'s `knownMachines`, e.g. `machine_1`), fields: `is_active: bool`, `last_updated: Timestamp` — written directly by the ESP32 over the Firestore REST API (no MQTT broker), unauthenticated (see `machine_status` rule below) |
 | `settings/staff_invite` | Invite code required during staff registration | admin-only read/write; redeemed exclusively via the `redeemStaffInvite` callable (Admin SDK), never read directly by clients |
 | `notifications` | FCM send history + client-side unread list | doc ID is deterministic per logical event (dedupe — see Cloud Functions section), fields: `uid`, `type`, `title`, `body`, `refId`, `read`, `createdAt`, `expiresAt` |
 
@@ -161,7 +162,7 @@ Controlled by staff in `StaffQueueScreen`. Patients see real-time updates via Fi
 ### Key Widgets & Helpers
 
 - **`icon3D(IconData, List<Color>, double size)`** (`core/widgets.dart`) — gradient container + double BoxShadow + shine overlay, used for action/service card icons. (`StaffSOSScreen` has its own private `_sosIcon3D` — a different implementation, kept separate on purpose.)
-- **`MachineStatusCard(machineId, machineName)`** (`core/widgets.dart`) — StreamBuilder on `machine_status/{machineId}`; marks stale via `isMachineStale` (`core/format.dart`, 30s ESP32 heartbeat timeout). Appointments reference a specific machine via `machineId`/`machineName`.
+- **Machine status** — `core/machines.dart` holds the fixed `knownMachines` list (`{id, name}`, e.g. `machine_1`/`เครื่อง 1`) — intentionally NOT derived from Firestore, since a machine that has never sent data still needs to show up as "ไม่ทราบข้อมูล" rather than not appearing at all. `machineStateFor()` (pure, tested in `test/core/machines_test.dart`) maps `is_active`/`last_updated` to one of three states — `unknown` (never sent data or stale 30s+, via `isMachineStale`), `online` (fresh heartbeat, `is_active: false` — connected but not treating anyone), `inUse` (fresh heartbeat, `is_active: true`). `MachineStatusCard(machineId, machineName)` (`core/widgets.dart`) shows one machine's detail; `MachineOverviewSection` shows all `knownMachines` grouped by state with tap-through to `MachineStatusCard` in a dialog — used on `StaffQueueScreen` only (patients don't see machine status at all; `BookingScreen`'s machine picker only blocks a machine that's already booked for the exact date+time selected, via a live `appointments` query, not machine online/offline state).
 - **Doc-ID builders** — `AvailabilityService.docId` and `QueueSlotService.docId` both sanitize `/`→`-` via `queueSlotDateKey` (e.g. `abc123_21-06-2569`). Both use direct `.doc(id).get()` lookups to avoid composite indexes. This sanitization is not optional: `CollectionReference.doc(path)` parses raw `/` as a path separator, so an un-sanitized Thai date silently writes into a nested subcollection with no matching security rule — every write then fails as `permission-denied`, which looks like a rules bug but is actually a malformed doc ID.
 - **Booking** — `AppointmentService.createBooking` runs the day-counter + slot-lock + appointment transaction and returns a sealed `BookingOutcome` (`BookingSuccess`/`BookingBlockedByActiveQueue`/`BookingFailed`); snackbars/navigation stay in `BookingScreen`.
 - **Profile photos** — base64 strings in `users/{uid}.photoBase64`; use `core/photo.dart` (`tryDecodePhotoBase64` → `MemoryImage`). No Firebase Storage is used.

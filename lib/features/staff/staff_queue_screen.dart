@@ -29,7 +29,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
   bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
   Widget _dayChip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
-    label: Text(label, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, color: selected ? Colors.white : textDark)),
+    label: Text(label, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, fontSize: 15, color: selected ? Colors.white : textDark)),
     selected: selected,
     onSelected: (_) => onTap(),
     selectedColor: primaryGreen,
@@ -44,7 +44,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
     final label = status.isEmpty ? 'ทั้งหมด' : info!.label;
     final color = status.isEmpty ? primaryGreen : info!.color;
     return ChoiceChip(
-      label: Text(label, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, fontSize: 13, color: selected ? Colors.white : color)),
+      label: Text(label, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.w600, fontSize: 15, color: selected ? Colors.white : color)),
       selected: selected,
       onSelected: (_) => setState(() => statusFilter = status),
       selectedColor: color,
@@ -226,8 +226,10 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
           int calling = allDocs.where((d) => d['status'] == QueueStatus.called).length;
           int treating = allDocs.where((d) => d['status'] == QueueStatus.treating).length;
 
-          return Column(children: [
-            // ── Header ──
+          // ── Header ── title/notif row + stat blocks + machine status, as a
+          // plain (non-pinned) sliver — it scrolls away together with
+          // everything else below it, per explicit request.
+          final headerChild = Column(children: [
             Container(
               color: Colors.white,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
@@ -236,8 +238,8 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                   Image.asset('assets/hart.png', width: 36),
                   const SizedBox(width: 12),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('จัดการคิวผู้ป่วย', style: GoogleFonts.notoSansThai(fontSize: 18, fontWeight: FontWeight.bold, color: textDark)),
-                    Text('ติดตามสถานะแบบเรียลไทม์', style: GoogleFonts.notoSansThai(fontSize: 11, color: Colors.grey.shade400)),
+                    Text('จัดการคิวผู้ป่วย', style: GoogleFonts.notoSansThai(fontSize: 21, fontWeight: FontWeight.bold, color: textDark)),
+                    Text('ติดตามสถานะแบบเรียลไทม์', style: GoogleFonts.notoSansThai(fontSize: 13, color: Colors.grey.shade400)),
                   ]),
                   const Spacer(),
                   Stack(clipBehavior: Clip.none, children: [
@@ -272,7 +274,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [BoxShadow(color: primaryGreen.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 3))],
                     ),
-                    child: Text('${allDocs.length} คิว', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                    child: Text('${allDocs.length} คิว', style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
                   ),
                 ]),
                 const SizedBox(height: 16),
@@ -285,104 +287,123 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                 ]),
               ]),
             ),
-            // ── Recovery banner ── shown only when nobody is currently called/
-            // treating despite waiting patients existing: either this is the
-            // very first patient of a fresh queue (autoCallNextOnComplete only
-            // fires on a status transition, so it never kicks off an empty
-            // queue), or the automatic system failed/lagged. Hidden otherwise
-            // so it never competes with the normal auto-advance flow.
-            if (waiting > 0 && calling == 0 && treating == 0 && _isSameDay(selectedDay, DateTime.now()))
-              Container(
-                color: Colors.white,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.amber.shade300),
-                  ),
-                  child: Row(children: [
-                    Icon(Icons.info_outline_rounded, color: Colors.amber.shade800, size: 22),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text('มีคิวรออยู่แต่ยังไม่มีใครถูกเรียก — ระบบอัตโนมัติอาจยังไม่ทำงาน กดเพื่อเรียกคิวถัดไปเอง',
-                        style: GoogleFonts.notoSansThai(fontSize: 12.5, color: Colors.amber.shade900, fontWeight: FontWeight.w600))),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                      onPressed: () => _callNext(context, allDocs),
-                      child: Text('เรียกคิว', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 13)),
-                    ),
-                  ]),
-                ),
-              ),
-            const Divider(height: 1),
             Container(
               color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SizedBox(
-                  height: 48,
-                  child: ListView(scrollDirection: Axis.horizontal, children: [
-                    _dayChip('วันนี้', _isSameDay(selectedDay, DateTime.now()) && !_isCustomDay, () {
-                      setState(() { selectedDay = DateTime.now(); _isCustomDay = false; });
-                    }),
-                    const SizedBox(width: kGapS),
-                    _dayChip('พรุ่งนี้', _isSameDay(selectedDay, DateTime.now().add(const Duration(days: 1))) && !_isCustomDay, () {
-                      setState(() { selectedDay = DateTime.now().add(const Duration(days: 1)); _isCustomDay = false; });
-                    }),
-                    const SizedBox(width: kGapS),
-                    _dayChip(_isCustomDay ? thaiBuddhistDate(selectedDay) : 'เลือกวัน', _isCustomDay, () async {
-                      final now = DateTime.now();
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDay,
-                        firstDate: now.subtract(const Duration(days: 30)),
-                        lastDate: now.add(const Duration(days: 30)),
-                        locale: const Locale('th'),
-                      );
-                      if (picked != null) setState(() { selectedDay = picked; _isCustomDay = true; });
-                    }),
-                  ]),
-                ),
-                const SizedBox(height: kGapM),
-                TextField(
-                  onChanged: (v) => setState(() => searchQuery = v.trim()),
-                  style: tBody(),
-                  decoration: InputDecoration(
-                    hintText: 'ค้นหาชื่อผู้ป่วยหรือเลขคิว',
-                    hintStyle: tCaption(),
-                    prefixIcon: const Icon(Icons.search_rounded, color: primaryGreen),
-                    filled: true, fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: BorderSide.none),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: BorderSide(color: Colors.grey.shade200)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: const BorderSide(color: primaryGreen)),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: const MachineOverviewSection(),
+            ),
+          ]);
+
+          return CustomScrollView(slivers: [
+            SliverToBoxAdapter(child: headerChild),
+            const SliverToBoxAdapter(child: Divider(height: 1)),
+                // ── Recovery banner ── shown only when nobody is currently called/
+                // treating despite waiting patients existing: either this is the
+                // very first patient of a fresh queue (autoCallNextOnComplete only
+                // fires on a status transition, so it never kicks off an empty
+                // queue), or the automatic system failed/lagged. Hidden otherwise
+                // so it never competes with the normal auto-advance flow.
+                if (waiting > 0 && calling == 0 && treating == 0 && _isSameDay(selectedDay, DateTime.now()))
+                  SliverToBoxAdapter(
+                    child: Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.shade50,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.amber.shade300),
+                        ),
+                        child: Row(children: [
+                          Icon(Icons.info_outline_rounded, color: Colors.amber.shade800, size: 22),
+                          const SizedBox(width: 10),
+                          Expanded(child: Text('มีคิวรออยู่แต่ยังไม่มีใครถูกเรียก — ระบบอัตโนมัติอาจยังไม่ทำงาน กดเพื่อเรียกคิวถัดไปเอง',
+                              style: GoogleFonts.notoSansThai(fontSize: 14.5, color: Colors.amber.shade900, fontWeight: FontWeight.w600))),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade700, foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                            onPressed: () => _callNext(context, allDocs),
+                            child: Text('เรียกคิว', style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 15)),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ),
+                SliverToBoxAdapter(
+                  child: Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      SizedBox(
+                        height: 48,
+                        child: ListView(scrollDirection: Axis.horizontal, children: [
+                          _dayChip('วันนี้', _isSameDay(selectedDay, DateTime.now()) && !_isCustomDay, () {
+                            setState(() { selectedDay = DateTime.now(); _isCustomDay = false; });
+                          }),
+                          const SizedBox(width: kGapS),
+                          _dayChip('พรุ่งนี้', _isSameDay(selectedDay, DateTime.now().add(const Duration(days: 1))) && !_isCustomDay, () {
+                            setState(() { selectedDay = DateTime.now().add(const Duration(days: 1)); _isCustomDay = false; });
+                          }),
+                          const SizedBox(width: kGapS),
+                          _dayChip(_isCustomDay ? thaiBuddhistDate(selectedDay) : 'เลือกวัน', _isCustomDay, () async {
+                            final now = DateTime.now();
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: selectedDay,
+                              firstDate: now.subtract(const Duration(days: 30)),
+                              lastDate: now.add(const Duration(days: 30)),
+                              locale: const Locale('th'),
+                            );
+                            if (picked != null) setState(() { selectedDay = picked; _isCustomDay = true; });
+                          }),
+                        ]),
+                      ),
+                      const SizedBox(height: kGapM),
+                      TextField(
+                        onChanged: (v) => setState(() => searchQuery = v.trim()),
+                        style: tBody(),
+                        decoration: InputDecoration(
+                          hintText: 'ค้นหาชื่อผู้ป่วยหรือเลขคิว',
+                          hintStyle: tCaption(),
+                          prefixIcon: const Icon(Icons.search_rounded, color: primaryGreen),
+                          filled: true, fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: BorderSide.none),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: BorderSide(color: Colors.grey.shade200)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kRadius), borderSide: const BorderSide(color: primaryGreen)),
+                        ),
+                      ),
+                      const SizedBox(height: kGapM),
+                      SizedBox(
+                        height: 40,
+                        child: ListView(scrollDirection: Axis.horizontal, children: [
+                          for (final s in const ['', 'กำลังรอ', 'เรียกคิว', 'กำลังรักษา', 'เสร็จสิ้น'])
+                            Padding(
+                              padding: const EdgeInsets.only(right: kGapS),
+                              child: _statusChip(s),
+                            ),
+                        ]),
+                      ),
+                    ]),
                   ),
                 ),
-                const SizedBox(height: kGapM),
-                SizedBox(
-                  height: 40,
-                  child: ListView(scrollDirection: Axis.horizontal, children: [
-                    for (final s in const ['', 'กำลังรอ', 'เรียกคิว', 'กำลังรักษา', 'เสร็จสิ้น'])
-                      Padding(
-                        padding: const EdgeInsets.only(right: kGapS),
-                        child: _statusChip(s),
-                      ),
-                  ]),
-                ),
-              ]),
-            ),
-            const Divider(height: 1),
-            Expanded(
-              child: docs.isEmpty
-                ? const StateMessage(icon: Icons.inbox_rounded, message: 'ไม่พบคิวตามเงื่อนไขที่เลือก')
-                : ListView.builder(
+                const SliverToBoxAdapter(child: Divider(height: 1)),
+                if (docs.isEmpty)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: StateMessage(icon: Icons.inbox_rounded, message: 'ไม่พบคิวตามเงื่อนไขที่เลือก'),
+                    ),
+                  )
+                else
+                  SliverPadding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                    itemCount: docs.length,
-                    itemBuilder: (_, i) {
+                    sliver: SliverList(delegate: SliverChildBuilderDelegate(
+                      (_, i) {
                       var doc = docs[i]; var data = doc.data() as Map<String, dynamic>;
                       String status = data['status'] ?? QueueStatus.waiting;
                       String queueNo = data['queueNo'] ?? '-';
@@ -449,27 +470,27 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                                     ),
                                     const SizedBox(width: 10),
                                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                      Text('คิว ${data['queueNo'] ?? '-'}', style: GoogleFonts.prompt(fontSize: 24, fontWeight: FontWeight.bold, color: textDark, height: 1.1)),
+                                      Text('คิว ${data['queueNo'] ?? '-'}', style: GoogleFonts.prompt(fontSize: 27, fontWeight: FontWeight.bold, color: textDark, height: 1.1)),
                                       Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
                                         Container(
                                           margin: const EdgeInsets.only(top: 2),
                                           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                                           decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
-                                          child: Text(statusInfo(status).label, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11)),
+                                          child: Text(statusInfo(status).label, style: GoogleFonts.notoSansThai(color: statusColor, fontWeight: FontWeight.bold, fontSize: 13)),
                                         ),
                                         if (data['noShowOfferStatus'] == 'pending')
                                           Container(
                                             margin: const EdgeInsets.only(top: 2),
                                             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                                             decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.amber.shade300)),
-                                            child: Text('รอตอบรับมาไวขึ้น', style: GoogleFonts.notoSansThai(color: Colors.amber.shade800, fontWeight: FontWeight.bold, fontSize: 11)),
+                                            child: Text('รอตอบรับมาไวขึ้น', style: GoogleFonts.notoSansThai(color: Colors.amber.shade800, fontWeight: FontWeight.bold, fontSize: 13)),
                                           ),
                                         if (data['noShowOfferChosenTime'] != null)
                                           Container(
                                             margin: const EdgeInsets.only(top: 2),
                                             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                                             decoration: BoxDecoration(color: lightGreen, borderRadius: BorderRadius.circular(20), border: Border.all(color: primaryGreen.withValues(alpha: 0.3))),
-                                            child: Text('แจ้งว่าจะมา ${data['noShowOfferChosenTime']}', style: GoogleFonts.notoSansThai(color: primaryGreen, fontWeight: FontWeight.bold, fontSize: 11)),
+                                            child: Text('แจ้งว่าจะมา ${data['noShowOfferChosenTime']}', style: GoogleFonts.notoSansThai(color: primaryGreen, fontWeight: FontWeight.bold, fontSize: 13)),
                                           ),
                                       ]),
                                     ])),
@@ -480,10 +501,10 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                                           gradient: LinearGradient(colors: [statusColor.withValues(alpha: 0.7), statusColor], begin: Alignment.topLeft, end: Alignment.bottomRight),
                                           borderRadius: BorderRadius.circular(12),
                                         ),
-                                        child: Text(data['time'] ?? '-', style: GoogleFonts.prompt(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                                        child: Text(data['time'] ?? '-', style: GoogleFonts.prompt(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17)),
                                       ),
                                       const SizedBox(height: 4),
-                                      Text(data['date'] ?? '', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 11)),
+                                      Text(data['date'] ?? '', style: GoogleFonts.notoSansThai(color: Colors.grey.shade400, fontSize: 13)),
                                     ]),
                                   ]),
                                   const SizedBox(height: 10),
@@ -494,8 +515,8 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                                     CircleAvatar(radius: 16, backgroundColor: lightGreen, child: Text((data['patientName'] ?? '?').toString().characters.first, style: GoogleFonts.notoSansThai(color: primaryGreen, fontWeight: FontWeight.bold, fontSize: 13))),
                                     const SizedBox(width: 10),
                                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                      Text(data['patientName'] ?? '-', style: GoogleFonts.notoSansThai(fontSize: 14, fontWeight: FontWeight.w700, color: textDark)),
-                                      Text(data['doctor'] ?? '-', style: GoogleFonts.notoSansThai(color: Colors.grey.shade500, fontSize: 12)),
+                                      Text(data['patientName'] ?? '-', style: GoogleFonts.notoSansThai(fontSize: 16, fontWeight: FontWeight.w700, color: textDark)),
+                                      Text(data['doctor'] ?? '-', style: GoogleFonts.notoSansThai(color: Colors.grey.shade500, fontSize: 14)),
                                     ])),
                                   ]),
                                   const SizedBox(height: 12),
@@ -513,7 +534,7 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                                         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                                           Icon(sIcon, color: Colors.white, size: 17),
                                           const SizedBox(width: 8),
-                                          Text(btnLabel, style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                                          Text(btnLabel, style: GoogleFonts.notoSansThai(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                                         ]),
                                       ),
                                     )),
@@ -542,9 +563,10 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
                           ),
                         ),
                       );
-                    },
+                      },
+                      childCount: docs.length,
+                    )),
                   ),
-            ),
           ]);
         },
       ),
@@ -568,8 +590,8 @@ class _StaffQueueScreenState extends State<StaffQueueScreen> {
         ),
         const SizedBox(width: 8),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('$count', style: GoogleFonts.prompt(color: color, fontWeight: FontWeight.bold, fontSize: 18, height: 1.1)),
-          Text(label, style: GoogleFonts.notoSansThai(color: color.withValues(alpha: 0.75), fontSize: 10, fontWeight: FontWeight.w600)),
+          Text('$count', style: GoogleFonts.prompt(color: color, fontWeight: FontWeight.bold, fontSize: 21, height: 1.1)),
+          Text(label, style: GoogleFonts.notoSansThai(color: color.withValues(alpha: 0.75), fontSize: 12, fontWeight: FontWeight.w600)),
         ])),
       ]),
     ),

@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:healthcare_app/core/format.dart';
+import 'package:healthcare_app/core/machines.dart';
 import 'package:healthcare_app/core/photo.dart';
+import 'package:healthcare_app/core/status.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/services/appointment_service.dart';
 import 'package:healthcare_app/services/availability_service.dart';
@@ -30,6 +32,7 @@ class _BookingScreenState extends State<BookingScreen> {
   bool loadingStaff = false;
   String? selectedMachineId;
   String selectedMachineName = '';
+  Set<String> busyMachineIds = {}; // เครื่องที่ถูกจอง (สถานะ active) ไปแล้วในวัน+เวลาที่เลือกอยู่
 
   bool get _canSubmit => staffList.isNotEmpty && availableTimes.isNotEmpty && selectedMachineId != null && !loadingTimes && !loadingStaff;
 
@@ -80,6 +83,42 @@ class _BookingScreenState extends State<BookingScreen> {
       if (mounted) setState(() { availableTimes = freeTimes; selectedTimeIndex = 0; loadingTimes = false; });
     } catch (_) {
       if (mounted) setState(() { availableTimes = []; loadingTimes = false; });
+    }
+    _loadBusyMachines();
+  }
+
+  /// เครื่องเป็นทรัพยากรกลาง ใช้ร่วมกันได้ทีละคนไม่ว่าจะเป็นคิวของนักกายภาพคนไหน —
+  /// เช็คจาก appointments ที่วันที่+เวลาตรงกับที่เลือกอยู่ (ไม่กรอง staffUid) แล้ว
+  /// เอาเครื่องที่ถูกจองไปแล้ว (สถานะ active) ออกจากตัวเลือก ถ้าเครื่องที่เลือกไว้
+  /// เดิมดันโดนจองไปแล้วพอดี ให้ล้างการเลือกทิ้งเพื่อบังคับให้เลือกใหม่
+  Future<void> _loadBusyMachines() async {
+    if (availableTimes.isEmpty) {
+      if (mounted) setState(() => busyMachineIds = {});
+      return;
+    }
+    final dateStr = thaiBuddhistDate(upcomingDays[selectedDateIndex]);
+    final time = availableTimes[selectedTimeIndex];
+    try {
+      final snap = await FirebaseFirestore.instance.collection('appointments')
+          .where('date', isEqualTo: dateStr).where('time', isEqualTo: time).get();
+      final busy = <String>{};
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final machineId = data['machineId'] as String?;
+        if (machineId != null && machineId.isNotEmpty && QueueStatus.active.contains(data['status'])) {
+          busy.add(machineId);
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        busyMachineIds = busy;
+        if (selectedMachineId != null && busy.contains(selectedMachineId)) {
+          selectedMachineId = null;
+          selectedMachineName = '';
+        }
+      });
+    } catch (_) {
+      if (mounted) setState(() => busyMachineIds = {});
     }
   }
 
@@ -267,7 +306,7 @@ class _BookingScreenState extends State<BookingScreen> {
                         bool isSel = i == selectedTimeIndex;
                         String time = availableTimes[i];
                         return GestureDetector(
-                          onTap: () => setState(() => selectedTimeIndex = i),
+                          onTap: () { setState(() => selectedTimeIndex = i); _loadBusyMachines(); },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             constraints: const BoxConstraints(minHeight: 48),
@@ -335,67 +374,46 @@ class _BookingScreenState extends State<BookingScreen> {
             ),
             const SizedBox(height: kGapXL),
 
-            // ── Step 4: เครื่อง ──
+            // ── Step 4: เครื่อง ── รายชื่อตายตัว (ดู core/machines.dart) ไม่แสดงสถานะ
+            // ออนไลน์/ออฟไลน์ให้ผู้ป่วยเห็น — แค่กันไม่ให้เลือกเครื่องที่ถูกจองไปแล้ว
+            // ในวัน+เวลาเดียวกัน (busyMachineIds คำนวณจาก _loadBusyMachines)
             _bookingCard(
               step: 4, icon: Icons.computer_rounded, title: '4. เลือกเครื่องที่ใช้',
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance.collection('machine_status').snapshots(),
-                builder: (context, machineSnap) {
-                  if (!machineSnap.hasData || machineSnap.data!.docs.isEmpty) {
-                    return _infoBox('ไม่พบข้อมูลเครื่อง', Colors.grey);
-                  }
-                  return Column(children: machineSnap.data!.docs.map((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final bool? isActive = data['is_active'] as bool?;
-                    final Timestamp? lastUpd = data['last_updated'] as Timestamp?;
-                    final String name = data['name'] ?? doc.id;
-                    bool stale = false;
-                    if (lastUpd != null) { stale = DateTime.now().difference(lastUpd.toDate()).inSeconds >= 30; }
-                    else if (data.containsKey('is_active')) { stale = true; }
-                    Color sColor; String sText; IconData sIcon;
-                    if (stale || isActive == null) { sColor = Colors.orange; sText = 'ไม่ทราบสถานะ'; sIcon = Icons.help_outline_rounded; }
-                    else if (isActive) { sColor = primaryGreen; sText = 'กำลังทำงาน'; sIcon = Icons.play_circle_rounded; }
-                    else { sColor = Colors.grey; sText = 'ว่างอยู่'; sIcon = Icons.pause_circle_rounded; }
-                    bool isSel = selectedMachineId == doc.id;
-                    return GestureDetector(
-                      onTap: () => setState(() { selectedMachineId = doc.id; selectedMachineName = name; }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
-                        constraints: const BoxConstraints(minHeight: 48),
-                        decoration: BoxDecoration(
-                          color: isSel ? primaryGreen : Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: isSel ? primaryGreen : lightGreen, width: isSel ? 1.5 : 1),
-                        ),
-                        child: Row(children: [
-                          Container(
-                            width: 42, height: 42,
-                            decoration: BoxDecoration(color: isSel ? Colors.white.withValues(alpha: 0.2) : sColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                            child: Icon(sIcon, color: isSel ? Colors.white : sColor, size: 22),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(name, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 14, color: isSel ? Colors.white : textDark)),
-                            const SizedBox(height: 2),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(color: isSel ? Colors.white.withValues(alpha: 0.2) : sColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                              child: Text(sText, style: GoogleFonts.notoSansThai(fontSize: 11, color: isSel ? Colors.white : sColor, fontWeight: FontWeight.w600)),
-                            ),
-                          ])),
-                          if (isSel) Container(
-                            width: 26, height: 26,
-                            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                            child: const Icon(Icons.check_rounded, color: primaryGreen, size: 15),
-                          ),
-                        ]),
+              child: Column(children: knownMachines.map((m) {
+                final bool isBusy = busyMachineIds.contains(m.id);
+                final bool isSel = selectedMachineId == m.id;
+                return GestureDetector(
+                  onTap: isBusy ? null : () => setState(() { selectedMachineId = m.id; selectedMachineName = m.name; }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    constraints: const BoxConstraints(minHeight: 48),
+                    decoration: BoxDecoration(
+                      color: isBusy ? Colors.grey.shade100 : (isSel ? primaryGreen : Colors.white),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: isBusy ? Colors.grey.shade200 : (isSel ? primaryGreen : lightGreen), width: isSel ? 1.5 : 1),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 42, height: 42,
+                        decoration: BoxDecoration(color: isSel ? Colors.white.withValues(alpha: 0.2) : (isBusy ? Colors.grey.shade200 : lightGreen), borderRadius: BorderRadius.circular(12)),
+                        child: Icon(Icons.precision_manufacturing_rounded, color: isSel ? Colors.white : (isBusy ? Colors.grey.shade400 : primaryGreen), size: 22),
                       ),
-                    );
-                  }).toList());
-                },
-              ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(m.name, style: GoogleFonts.notoSansThai(fontWeight: FontWeight.bold, fontSize: 14, color: isBusy ? Colors.grey.shade400 : (isSel ? Colors.white : textDark)))),
+                      if (isBusy)
+                        Text('ถูกจองแล้ว', style: GoogleFonts.notoSansThai(fontSize: 11, color: Colors.grey.shade400, fontWeight: FontWeight.w600))
+                      else if (isSel)
+                        Container(
+                          width: 26, height: 26,
+                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                          child: const Icon(Icons.check_rounded, color: primaryGreen, size: 15),
+                        ),
+                    ]),
+                  ),
+                );
+              }).toList()),
             ),
 
           ]),

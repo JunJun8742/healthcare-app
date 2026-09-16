@@ -16,7 +16,7 @@ import 'package:healthcare_app/features/patient/notification_screen.dart';
 import 'package:healthcare_app/features/patient/history_screen.dart';
 
 // ==========================================
-// 5. Home Screen (Patient) + MachineStatusCard
+// 5. Home Screen (Patient)
 // ==========================================
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
