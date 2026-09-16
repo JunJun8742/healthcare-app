@@ -24,6 +24,8 @@ class NotificationScreen extends StatelessWidget {
         return (icon: Icons.event_busy_rounded, color: Colors.orange);
       case 'morning_reminder':
         return (icon: Icons.alarm_rounded, color: Colors.amber.shade800);
+      case 'hour_reminder':
+        return (icon: Icons.schedule_rounded, color: Colors.amber.shade800);
       case 'noshow_offer':
         return (icon: Icons.directions_walk_rounded, color: primaryGreen);
       case 'staff_ping':

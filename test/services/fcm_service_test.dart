@@ -8,7 +8,7 @@ void main() {
     });
 
     test('patient targets route to patientQueue', () {
-      for (final type in ['queue_called', 'morning_reminder', 'booking_cancelled', 'staff_ping', 'noshow_offer']) {
+      for (final type in ['queue_called', 'morning_reminder', 'hour_reminder', 'booking_cancelled', 'staff_ping', 'noshow_offer']) {
         expect(notificationDestination(role: 'patient', type: type), NotifDestination.patientQueue, reason: type);
       }
     });

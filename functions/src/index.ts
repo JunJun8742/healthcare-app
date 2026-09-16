@@ -19,6 +19,7 @@ type NotificationType =
   | 'booking_created'
   | 'booking_cancelled'
   | 'morning_reminder'
+  | 'hour_reminder'
   | 'staff_ping'
   | 'noshow_offer';
 
@@ -381,10 +382,16 @@ export const morningReminders = onSchedule(
 // ever. The "come in earlier?" nudge is purely informational: two concrete
 // arrival-time options (now+5min, now+10min), or decline; no response within
 // OFFER_WINDOW_MS is treated as a decline.
+//
+// This same tick also sends the 1-hour-before reminder for still-'กำลังรอ'
+// appointments (separate from morningReminders' fixed 7:00 AM send) —
+// piggybacked here rather than a dedicated schedule since this function
+// already scans every appointment for the day every 2 minutes.
 
 const LATE_GRACE_MS = 5 * 60 * 1000; // 5 minutes past scheduled time -> auto-cancel
 const NOSHOW_GRACE_MS = 10 * 60 * 1000; // 10 minutes called but not checked in -> auto-cancel
 const OFFER_WINDOW_MS = 5 * 60 * 1000; // "come in earlier?" offer window; no response = declined
+const HOUR_BEFORE_MS = 60 * 60 * 1000; // send the pre-appointment reminder once within 1h of the scheduled time
 
 // Formats a UTC millis instant as Bangkok wall-clock "HH:MM" — used for the
 // offer's arrival-time options (option labels only, not stored as
@@ -477,6 +484,23 @@ export const checkLateAppointments = onSchedule(
             logger.warn('checkLateAppointments: unparseable date/time', { id: doc.id, date: data.date, time: data.time });
             continue;
           }
+
+          // ---- 1-hour-before reminder ---- fires once the appointment enters
+          // its final hour (idempotent via createHistory's deterministic docId
+          // — no separate "sent" flag needed, same pattern as morningReminders).
+          if (now >= apptMillis - HOUR_BEFORE_MS && now < apptMillis) {
+            const patientUid = data.patientUid;
+            if (typeof patientUid === 'string' && patientUid.length > 0) {
+              const queueNo = data.queueNo ?? '-';
+              const time = data.time ?? '-';
+              const title = 'ใกล้ถึงเวลานัดของคุณแล้ว';
+              const body = `คิวหมายเลข ${queueNo} เวลา ${time} อีกประมาณ 1 ชั่วโมง กรุณาเตรียมตัวมาตามนัด`;
+              if (await createHistory(`${doc.id}_hourReminder`, { uid: patientUid, type: 'hour_reminder', title, body, refId: doc.id })) {
+                await sendToUser(patientUid, { type: 'hour_reminder', title, body, refId: doc.id, channelId: CHANNEL_DEFAULT });
+              }
+            }
+          }
+
           if (now >= apptMillis + LATE_GRACE_MS) {
             const didCancel = await cancelAppointmentAndOfferNext(doc, data, allDocs, now, 'system_late');
             if (didCancel) lateCancelled++;
