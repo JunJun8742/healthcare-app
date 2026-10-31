@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ขอลบบัญชี — Healthcare Station</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --green: #186B44; --green-light: #E6F4EA; --bg: #F7FCF9; --text: #2D312F; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Noto Sans Thai', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 24px; line-height: 1.75; }
+    main { background: #fff; max-width: 760px; margin: 0 auto; padding: 32px 28px; border-radius: 24px; box-shadow: 0 12px 36px rgba(24,107,68,.12); }
+    h1 { color: var(--green); font-size: 26px; margin: 0 0 16px; }
+    h2 { color: var(--green); font-size: 18px; margin: 28px 0 8px; }
+    ol, ul { padding-left: 22px; margin: 6px 0; }
+    li { margin: 4px 0; }
+    .box { background: var(--green-light); border-radius: 14px; padding: 14px 18px; }
+    a { color: var(--green); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ขอลบบัญชี Healthcare Station</h1>
+
+  <h2>วิธีที่ 1: ลบเองในแอป (ผู้ป่วย)</h2>
+  <ol>
+    <li>เปิดแอป Healthcare Station แล้วเข้าสู่ระบบ</li>
+    <li>ไปที่แท็บ "โปรไฟล์"</li>
+    <li>กด "ลบบัญชีและข้อมูลของฉัน" แล้วยืนยันด้วยรหัสผ่าน</li>
+  </ol>
+
+  <h2>วิธีที่ 2: ขอลบผ่านอีเมล (กรณีลบแอปไปแล้ว หรือเป็นบัญชีเจ้าหน้าที่)</h2>
+  <div class="box">
+    <!-- TODO: ใส่อีเมลติดต่อจริงก่อน deploy (ให้ตรงกับ privacy.html) -->
+    ส่งอีเมลมาที่ <strong>[อีเมลติดต่อ]</strong> หัวข้อ "ขอลบบัญชี Healthcare Station"
+    โดยส่งจาก<strong>อีเมลเดียวกับที่ใช้สมัคร</strong> และระบุชื่อ-นามสกุล
+  </div>
+  <p>เราจะดำเนินการภายใน 30 วัน และแจ้งกลับทางอีเมลเมื่อลบเสร็จ</p>
+
+  <h2>ข้อมูลที่จะถูกลบ</h2>
+  <ul>
+    <li>บัญชีผู้ใช้ (อีเมล, รหัสผ่าน), ชื่อ, รูปโปรไฟล์</li>
+    <li>ประวัติการจองคิวและการนัดหมายทั้งหมดของคุณ</li>
+  </ul>
+
+  <h2>ข้อมูลที่อาจเก็บต่อ</h2>
+  <ul>
+    <li>ประวัติการแจ้งเตือน — หมดอายุภายใน 30 วัน</li>
+    <li>บันทึกการแจ้งเหตุฉุกเฉิน (SOS) — เก็บไว้เป็นหลักฐานความปลอดภัย และลบได้หากระบุในอีเมลคำขอ</li>
+  </ul>
+
+  <p>อ่านรายละเอียดเพิ่มเติมได้ที่ <a href="privacy.html">นโยบายความเป็นส่วนตัว</a></p>
+</main>
+</body>
+</html>

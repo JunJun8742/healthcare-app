@@ -31,6 +31,11 @@ flutter test
 flutter build apk --release
 # Output: build/app/outputs/flutter-apk/app-release.apk
 
+# Build for Google Play (requires android/key.properties — release build fails without it;
+# see docs/play-store-release.md). applicationId: th.ac.acat.healthcarestation
+flutter build appbundle --release
+# Output: build/app/outputs/bundle/release/app-release.aab
+
 # Regenerate Firebase options (requires flutterfire CLI) — only when explicitly asked
 flutterfire configure
 ```

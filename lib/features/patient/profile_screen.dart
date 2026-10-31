@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:healthcare_app/core/links.dart';
 import 'package:healthcare_app/core/photo.dart';
 import 'package:healthcare_app/core/theme.dart';
 import 'package:healthcare_app/core/widgets.dart';
@@ -150,6 +152,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // แสดงลิงก์นโยบายความเป็นส่วนตัว — ไม่ใช้ url_launcher เพื่อไม่เพิ่ม dependency
+  // ผู้ใช้คัดลอกลิงก์ไปเปิดในเบราว์เซอร์ได้ (Google Play ต้องการให้เข้าถึงได้จากในแอป)
+  void _showPrivacyPolicy(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('นโยบายความเป็นส่วนตัว', style: TextStyle(fontWeight: FontWeight.bold)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('แอปเก็บชื่อ อีเมล รูปโปรไฟล์ และข้อมูลการนัดหมาย เพื่อใช้จองคิวและดูแลการรักษาเท่านั้น ไม่ขายหรือส่งต่อเพื่อการโฆษณา อ่านฉบับเต็มได้ที่:'),
+          const SizedBox(height: kGapM),
+          SelectableText(privacyPolicyUrl, style: const TextStyle(color: primaryGreen, fontWeight: FontWeight.w600)),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              // จับ messenger ไว้ก่อน await — กัน use_build_context_synchronously
+              final messenger = ScaffoldMessenger.of(context);
+              await Clipboard.setData(const ClipboardData(text: privacyPolicyUrl));
+              if (ctx.mounted) Navigator.pop(ctx);
+              messenger.showSnackBar(const SnackBar(content: Text('คัดลอกลิงก์แล้ว')));
+            },
+            child: const Text('คัดลอกลิงก์'),
+          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ปิด')),
+        ],
+      ),
+    );
+  }
+
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
@@ -247,6 +279,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onPressed: () => _confirmDeleteAccount(context),
                 ),
               ],
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: Colors.grey.shade600),
+                icon: const Icon(Icons.privacy_tip_outlined, size: 18),
+                label: Text('นโยบายความเป็นส่วนตัว', style: GoogleFonts.notoSansThai(fontSize: 13)),
+                onPressed: () => _showPrivacyPolicy(context),
+              ),
             ]),
           )),
             ]),

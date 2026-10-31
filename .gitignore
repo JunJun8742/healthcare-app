@@ -52,3 +52,4 @@ android/build/
 
 # Firebase Hosting — APK is a large build artifact, deploy it but don't commit it
 public/*.apk
+*.keystore
